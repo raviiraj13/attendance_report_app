@@ -57,6 +57,39 @@ def target_attendance(present, total_classes, target_percent):
     solution = sp.solve((present + x) / (total_classes + x) - target_percent/100, x)
     return int(solution[0]) if solution else 0
 
+# --------------------------
+# Aggregate Attendance Section
+# --------------------------
+st.subheader("📊 Aggregate Attendance")
+
+total_present = df['Present'].sum()
+total_absent = df['Absent'].sum()
+total_classes = total_present + total_absent
+overall_attendance = total_present / total_classes * 100 if total_classes > 0 else 0
+
+st.metric("Total Present Classes", total_present)
+st.metric("Total Absent Classes", total_absent)
+st.metric("Overall Attendance %", f"{overall_attendance:.1f}%")
+
+# Pie chart for aggregate attendance
+values = [total_present, total_absent]
+labels = ['Present', 'Absent']
+colors = ['#1abc9c', '#f39c12']
+
+plt.figure(figsize=(6,6))
+plt.pie(
+    values,
+    labels=labels,
+    autopct='%1.1f%%',
+    startangle=90,
+    colors=colors,
+    wedgeprops={'edgecolor':'white'}
+)
+plt.title("Aggregate Attendance")
+st.pyplot(plt)
+plt.close()
+
+
 def plot_pie_chart(subject, present, absent):
     values = [present, absent]
     labels = ['Present', 'Absent']
