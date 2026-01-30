@@ -8,7 +8,7 @@ import re
 
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
-st.title("Attendance Tracker")
+st.title("📊 Attendance Tracker")
 st.caption("Paste attendance data directly from your college portal")
 
 # ---------------- COLORS ----------------
@@ -58,8 +58,9 @@ def smart_parse_pasted_data(text):
         axis=1
     )
 
+    # 🔴🟢 DOT STATUS
     df["Status"] = df["Attendance%"].apply(
-        lambda x: "Safe" if x >= 75 else "Risk"
+        lambda x: "🟢" if x >= 75 else "🔴"
     )
 
     return df.sort_values("Attendance%")
@@ -135,9 +136,11 @@ def plot_donut_charts(df):
             startangle=90,
             wedgeprops={"width": 0.35, "edgecolor": "white"}
         )
-        ax.text(0, 0, f"{r['Attendance%']:.0f}%",
-                ha="center", va="center",
-                fontsize=12, fontweight="bold")
+        ax.text(
+            0, 0, f"{r['Attendance%']:.0f}%",
+            ha="center", va="center",
+            fontsize=12, fontweight="bold"
+        )
         ax.set_title(r["Subject"], fontsize=10)
 
     st.pyplot(fig)
@@ -165,28 +168,32 @@ def generate_pdf(df, total_present, total_absent):
     for _, r in df.iterrows():
         pdf.cell(
             0, 6,
-            clean_text(f"{r['Subject']} - {r['Attendance%']:.1f}% ({r['Status']})"),
+            clean_text(f"{r['Subject']} - {r['Attendance%']:.1f}%"),
             ln=True
         )
 
     return pdf.output(dest="S").encode("latin-1")
 
 # ---------------- INPUT ----------------
-pasted = st.text_area("Paste attendance data", height=300)
+pasted = st.text_area("📋 Paste attendance data", height=300)
 df = None
 
 if pasted.strip():
     try:
         df = smart_parse_pasted_data(pasted)
-        st.success("Attendance parsed successfully")
+        st.success("✅ Attendance parsed successfully")
     except Exception as e:
-        st.error("Parsing failed")
+        st.error("❌ Parsing failed")
         st.code(str(e))
 
 # ---------------- OUTPUT ----------------
 if df is not None:
-    st.subheader("Attendance Overview")
-    st.dataframe(df)
+    st.subheader("📋 Attendance Overview")
+
+    def highlight_risk(row):
+        return ["background-color: #FDEDEC" if row["Status"] == "🔴" else "" for _ in row]
+
+    st.dataframe(df.style.apply(highlight_risk, axis=1))
 
     total_present = df["Present"].sum()
     total_absent = df["Absent"].sum()
@@ -200,19 +207,19 @@ if df is not None:
 
     plot_aggregate_pie(total_present, total_absent)
 
-    # -------- TARGET AGGREGATE --------
-    st.markdown("## Target Aggregate Attendance")
+    # 🎯 Aggregate Target
+    st.markdown("## 🎯 Target Aggregate Attendance")
     target_ag = st.number_input("Aggregate target (%)", 0, 100, 75)
 
     if target_ag > overall:
         need = classes_to_attend(total_present, total_classes, target_ag)
-        st.warning(f"Attend {need} more classes")
+        st.warning(f"⚠️ Attend {need} more classes")
     else:
         leave = classes_can_leave(total_present, total_classes, target_ag)
-        st.success(f"You can leave {leave} classes")
+        st.success(f"😌 You can leave {leave} classes")
 
-    # -------- TARGET SUBJECT --------
-    st.markdown("## Target Subject Attendance")
+    # 🎯 Subject Target
+    st.markdown("## 🎯 Target Subject Attendance")
     subject = st.selectbox("Select subject", df["Subject"])
     target_sub = st.number_input("Subject target (%)", 0, 100, 75)
 
@@ -220,19 +227,16 @@ if df is not None:
     need_sub = classes_to_attend(row["Present"], row["Total"], target_sub)
     leave_sub = classes_can_leave(row["Present"], row["Total"], target_sub)
 
-    st.info(
-        f"{subject}: Attend {need_sub} more classes "
-        f"or you can leave {leave_sub} classes"
-    )
+    st.info(f"{subject}: Attend {need_sub} classes | Can leave {leave_sub}")
 
-    # -------- VISUALS --------
-    st.markdown("## Visual Insights")
+    # 📈 Visuals
+    st.markdown("## 📈 Visual Insights")
     plot_subject_pie(subject, row["Present"], row["Absent"])
     plot_bar_chart(df)
     plot_donut_charts(df)
 
-    # -------- PDF --------
-    st.subheader("Download Report")
+    # 📄 PDF
+    st.markdown("## 📄 Download Report")
     pdf = generate_pdf(df, total_present, total_absent)
     st.download_button(
         "Download PDF",
