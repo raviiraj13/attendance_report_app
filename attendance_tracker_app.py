@@ -9,7 +9,7 @@ import re
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
 st.title("📊 Attendance Tracker")
-st.write("Upload CSV, paste CSV URL, or paste attendance table (Excel / portal).")
+st.caption("Smart attendance analysis with real-world copy-paste support")
 
 # ---------------- SAFE & CORRECT PASTE PARSER ----------------
 def smart_parse_pasted_data(text):
@@ -67,25 +67,34 @@ def classes_to_attend(present, total, target):
 
 def classes_can_leave(present, total, target):
     leave = 0
-    while total + leave > 0 and (present / (total + leave)) * 100 >= target:
+    while (present / (total + leave)) * 100 >= target:
         leave += 1
     return max(0, leave - 1)
 
 # ---------------- Charts ----------------
 def plot_bar_chart(df):
-    plt.figure(figsize=(8,4))
-    sns.barplot(x="Subject", y="Present", data=df)
+    plt.figure(figsize=(9,4))
+    colors = sns.color_palette("husl", len(df))  # 🌈 colorful bars
+    sns.barplot(
+        x="Subject",
+        y="Present",
+        data=df,
+        palette=colors
+    )
     plt.xticks(rotation=60, ha="right")
-    plt.title("Present Classes per Subject")
+    plt.title("Present Classes per Subject", fontsize=13)
     st.pyplot(plt)
     plt.close()
 
 def plot_pie_chart(subject, present, absent):
     plt.figure(figsize=(5,5))
-    plt.pie([present, absent],
-            labels=["Present","Absent"],
-            autopct="%1.1f%%",
-            startangle=90)
+    plt.pie(
+        [present, absent],
+        labels=["Present","Absent"],
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=["#2ecc71", "#e74c3c"]
+    )
     plt.title(f"Attendance for {subject}")
     st.pyplot(plt)
     plt.close()
@@ -101,9 +110,12 @@ def plot_donut_charts(df):
             ax.axis("off")
             continue
         r = df.iloc[i]
-        ax.pie([r["Present"], r["Absent"]],
-               startangle=90,
-               wedgeprops=dict(width=0.4))
+        ax.pie(
+            [r["Present"], r["Absent"]],
+            startangle=90,
+            wedgeprops=dict(width=0.4),
+            colors=["#3498db", "#f1c40f"]
+        )
         ax.set_title(f"{r['Subject']}\n{r['Attendance%']:.0f}%")
 
     st.pyplot(fig)
@@ -138,42 +150,39 @@ def generate_pdf(df, subject, target, needed,
     pdf.set_font("Arial","B",14)
     pdf.cell(0,8,"Target Analysis",ln=True)
     pdf.set_font("Arial","",11)
-    pdf.cell(0,6,f"Subject: {subject}",ln=True)
-    pdf.cell(0,6,f"Target %: {target}",ln=True)
-    pdf.cell(0,6,f"Classes needed to attend: {needed}",ln=True)
     pdf.cell(0,6,f"Target Aggregate %: {target_ag}",ln=True)
+    pdf.cell(0,6,f"Subject Target %: {target}",ln=True)
+    pdf.cell(0,6,f"Classes needed (subject): {needed}",ln=True)
 
     return pdf.output(dest="S").encode("latin-1")
 
-# ---------------- Input ----------------
-option = st.radio(
-    "How do you want to provide attendance data?",
-    ("Upload CSV", "CSV URL", "Paste Data")
-)
+# ---------------- INPUT (ORDER CHANGED) ----------------
+st.subheader("📋 Paste Attendance (Recommended)")
+pasted = st.text_area("Paste attendance table here", height=260)
+
+st.subheader("📁 Upload CSV")
+uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+
+st.subheader("🌐 CSV URL")
+csv_url = st.text_input("Enter CSV URL")
 
 df = None
 
-if option == "Upload CSV":
-    file = st.file_uploader("Upload CSV", type=["csv"])
-    if file:
-        df = finalize_df(pd.read_csv(file))
+if pasted.strip():
+    try:
+        df = smart_parse_pasted_data(pasted)
+        st.success("✅ Pasted data parsed successfully!")
+    except Exception as e:
+        st.error("❌ Unable to parse pasted data")
+        st.code(str(e))
 
-elif option == "CSV URL":
-    url = st.text_input("Enter CSV URL")
-    if url:
-        df = finalize_df(pd.read_csv(url))
+elif uploaded_file:
+    df = finalize_df(pd.read_csv(uploaded_file))
 
-elif option == "Paste Data":
-    pasted = st.text_area("📋 Paste attendance table here", height=350)
-    if pasted.strip():
-        try:
-            df = smart_parse_pasted_data(pasted)
-            st.success("✅ Pasted data parsed correctly!")
-        except Exception as e:
-            st.error("❌ Unable to parse pasted data")
-            st.code(str(e))
+elif csv_url:
+    df = finalize_df(pd.read_csv(csv_url))
 
-# ---------------- Output ----------------
+# ---------------- OUTPUT ----------------
 if df is not None:
     st.subheader("📋 Data Preview")
     st.dataframe(df)
@@ -184,39 +193,40 @@ if df is not None:
     overall = (total_present / total_classes) * 100 if total_classes else 0
 
     st.subheader("📊 Aggregate Attendance")
-    st.metric("Total Present", total_present)
-    st.metric("Total Absent", total_absent)
-    st.metric("Overall Attendance %", f"{overall:.1f}%")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Present", total_present)
+    col2.metric("Total Absent", total_absent)
+    col3.metric("Overall %", f"{overall:.1f}%")
 
-    # -------- Subject Target --------
-    st.subheader("🎯 Target Attendance (Subject)")
-    target = st.number_input("Target % (Subject)", 0, 100, 75)
-    subject = st.selectbox("Select Subject", df["Subject"])
-    row = df[df["Subject"] == subject].iloc[0]
-    needed = classes_to_attend(row["Present"], row["Total"], target)
-    st.success(f"You need **{needed} more classes** in {subject}")
-
-    # -------- Aggregate Target --------
-    st.subheader("🎯 Target Aggregate Attendance")
-    target_ag = st.number_input("Target Aggregate %", 0, 100, 75)
+    # ---------- TARGET AGGREGATE (FIRST) ----------
+    st.markdown("## 🎯 Target Aggregate Attendance")
+    target_ag = st.number_input("Set your target aggregate (%)", 0, 100, 75)
 
     if target_ag > overall:
         need = classes_to_attend(total_present, total_classes, target_ag)
-        st.warning(f"📌 You need to attend **{need} more classes** to reach {target_ag}%")
+        st.warning(f"📌 Attend **{need} more classes** to reach {target_ag}%")
     elif target_ag < overall:
         leave = classes_can_leave(total_present, total_classes, target_ag)
-        st.success(f"😌 You can safely leave **{leave} classes** and still maintain {target_ag}%")
+        st.success(f"😌 You can **leave {leave} classes** and still stay at {target_ag}%")
     else:
-        st.info("✅ You are already exactly at the target aggregate attendance.")
+        st.info("✅ You are exactly at your target aggregate attendance")
 
-    # -------- Charts --------
-    st.subheader("📈 Charts")
+    # ---------- TARGET SUBJECT (SECOND) ----------
+    st.markdown("## 🎯 Target Subject Attendance")
+    target = st.number_input("Set subject target (%)", 0, 100, 75)
+    subject = st.selectbox("Select Subject", df["Subject"])
+    row = df[df["Subject"] == subject].iloc[0]
+    needed = classes_to_attend(row["Present"], row["Total"], target)
+    st.info(f"📘 Attend **{needed} more classes** in **{subject}** to reach {target}%")
+
+    # ---------- CHARTS ----------
+    st.subheader("📈 Visual Insights")
     plot_pie_chart(subject, row["Present"], row["Absent"])
     plot_bar_chart(df)
     plot_donut_charts(df)
 
-    # -------- PDF --------
-    st.subheader("📄 Download PDF")
+    # ---------- PDF ----------
+    st.subheader("📄 Download Report")
     pdf = generate_pdf(
         df, subject, target, needed,
         total_present, total_absent, target_ag
