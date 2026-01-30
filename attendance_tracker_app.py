@@ -1,4 +1,4 @@
-import streamlit as st
+    import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -9,10 +9,10 @@ import io
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
 st.title("📊 Attendance Tracker")
-st.write("Upload CSV, paste CSV URL, or paste copied table data (Excel / portal).")
+st.write("Upload CSV, paste CSV URL, or paste copied attendance tables (Excel / portal).")
 
-# ---------------- Functions ----------------
-def compute_attendance(df):
+# ---------------- Core Utilities ----------------
+def finalize_df(df):
     df.columns = df.columns.str.strip()
     df['Present'] = pd.to_numeric(df['Present'], errors='coerce').fillna(0)
     df['Absent'] = pd.to_numeric(df['Absent'], errors='coerce').fillna(0)
@@ -20,6 +20,7 @@ def compute_attendance(df):
     df['Attendance%'] = df['Present'] / df['Total'] * 100
     return df
 
+# ---------------- Charts ----------------
 def plot_bar_chart(df):
     plt.figure(figsize=(8,4))
     barplot = sns.barplot(x='Subject', y='Present', data=df, palette='Set2')
@@ -41,23 +42,18 @@ def plot_donut_charts(df):
         if i >= len(df):
             ax.axis('off')
             continue
-        row = df.iloc[i]
-        ax.pie([row['Present'], row['Absent']],
+        r = df.iloc[i]
+        ax.pie([r['Present'], r['Absent']],
                labels=['',''],
                colors=['#1abc9c','#f39c12'],
                startangle=90,
                wedgeprops={'width':0.4,'edgecolor':'white'})
-        ax.text(0,0,f"{row['Attendance%']:.0f}%", ha='center', va='center',
-                fontsize=10, fontweight='bold')
-        ax.set_title(row['Subject'], fontsize=10)
+        ax.text(0,0,f"{r['Attendance%']:.0f}%",
+                ha='center', va='center', fontsize=10, fontweight='bold')
+        ax.set_title(r['Subject'], fontsize=10)
     plt.tight_layout()
     st.pyplot(fig)
     plt.close()
-
-def target_attendance(present, total_classes, target_percent):
-    x = sp.symbols('x')
-    sol = sp.solve((present + x)/(total_classes + x) - target_percent/100, x)
-    return max(0, int(sol[0])) if sol else 0
 
 def plot_pie_chart(subject, present, absent):
     plt.figure(figsize=(5,5))
@@ -71,36 +67,45 @@ def plot_pie_chart(subject, present, absent):
     st.pyplot(plt)
     plt.close()
 
-def generate_pdf(df, subject, target_percent, classes_needed,
-                 total_present, total_absent, target_aggregate):
+# ---------------- Math Logic ----------------
+def target_attendance(present, total, target):
+    x = sp.symbols('x')
+    sol = sp.solve((present+x)/(total+x) - target/100, x)
+    return max(0, int(sol[0])) if sol else 0
+
+# ---------------- PDF ----------------
+def generate_pdf(df, subject, target, needed,
+                 total_present, total_absent, target_ag):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial","B",18)
     pdf.cell(0,10,"Attendance Report",ln=True,align="C")
-    pdf.ln(5)
+    pdf.ln(4)
 
-    pdf.set_font("Arial","",12)
     total_classes = total_present + total_absent
     overall = (total_present/total_classes)*100 if total_classes else 0
+
+    pdf.set_font("Arial","",12)
     pdf.cell(0,7,f"Overall Attendance: {overall:.1f}%",ln=True)
     pdf.cell(0,7,f"Total Present: {total_present}",ln=True)
     pdf.cell(0,7,f"Total Absent: {total_absent}",ln=True)
 
-    pdf.ln(5)
+    pdf.ln(4)
     pdf.set_font("Arial","B",14)
     pdf.cell(0,8,"Subject-wise Attendance",ln=True)
     pdf.set_font("Arial","",11)
+
     for _, r in df.iterrows():
         pdf.cell(0,6,f"{r['Subject']} - {r['Attendance%']:.1f}%",ln=True)
 
-    pdf.ln(5)
+    pdf.ln(4)
     pdf.set_font("Arial","B",14)
     pdf.cell(0,8,"Target Analysis",ln=True)
     pdf.set_font("Arial","",11)
     pdf.cell(0,6,f"Subject: {subject}",ln=True)
-    pdf.cell(0,6,f"Target %: {target_percent}",ln=True)
-    pdf.cell(0,6,f"Classes needed: {classes_needed}",ln=True)
-    pdf.cell(0,6,f"Target Aggregate: {target_aggregate}%",ln=True)
+    pdf.cell(0,6,f"Target %: {target}",ln=True)
+    pdf.cell(0,6,f"Classes needed: {needed}",ln=True)
+    pdf.cell(0,6,f"Target Aggregate %: {target_ag}",ln=True)
 
     return pdf.output(dest='S').encode('latin-1')
 
@@ -112,32 +117,48 @@ input_option = st.radio(
 
 df = None
 
+# ---------- Upload ----------
 if input_option == "Upload File":
-    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
-    if uploaded_file:
-        df = compute_attendance(pd.read_csv(uploaded_file))
+    file = st.file_uploader("Upload CSV file", type=["csv"])
+    if file:
+        df = finalize_df(pd.read_csv(file))
 
+# ---------- URL ----------
 elif input_option == "CSV URL":
-    url = st.text_input("Enter CSV URL")
+    url = st.text_input("Enter CSV file URL")
     if url:
-        df = compute_attendance(pd.read_csv(url))
+        df = finalize_df(pd.read_csv(url))
 
+# ---------- Paste ----------
 elif input_option == "Paste Data":
-    pasted_data = st.text_area(
-        "📋 Paste copied table (Excel / portal / CSV)",
-        height=280
-    )
-    if pasted_data.strip():
+    pasted = st.text_area("📋 Paste copied attendance table", height=320)
+
+    if pasted.strip():
         try:
-            df = compute_attendance(
-                pd.read_csv(io.StringIO(pasted_data), sep=None, engine="python")
-            )
-            st.success("✅ Data converted successfully!")
+            try:
+                df_raw = pd.read_csv(io.StringIO(pasted), sep=None, engine="python")
+            except:
+                df_raw = pd.read_csv(io.StringIO(pasted),
+                                     delim_whitespace=True,
+                                     header=None)
+
+            df_raw = df_raw.dropna(axis=1, how="all")
+            df_raw.columns = range(len(df_raw.columns))
+
+            # Smart reconstruction for portal-style data
+            df = pd.DataFrame()
+            df["Present"] = pd.to_numeric(df_raw.iloc[:, -4], errors="coerce")
+            df["Absent"] = pd.to_numeric(df_raw.iloc[:, -2], errors="coerce")
+            df["Subject"] = df_raw.iloc[:, 2:-5].astype(str).agg(" ".join, axis=1)
+
+            df = finalize_df(df)
+            st.success("✅ Pasted data parsed successfully!")
+
         except Exception as e:
-            st.error("❌ Failed to parse pasted data")
+            st.error("❌ Could not parse pasted data")
             st.code(str(e))
 
-# ---------------- Analysis Section ----------------
+# ---------------- Output Section ----------------
 if df is not None:
     st.subheader("📋 Data Preview")
     st.dataframe(df)
@@ -170,8 +191,9 @@ if df is not None:
     plot_donut_charts(df)
 
     st.subheader("📄 Download PDF")
-    pdf = generate_pdf(df, subject, target, needed,
-                       total_present, total_absent, target_ag)
-    st.download_button("📥 Download PDF", pdf,
+    pdf_bytes = generate_pdf(df, subject, target, needed,
+                             total_present, total_absent, target_ag)
+    st.download_button("📥 Download PDF",
+                       data=pdf_bytes,
                        file_name="attendance_report.pdf",
                        mime="application/pdf")
