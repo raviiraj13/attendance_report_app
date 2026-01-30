@@ -17,7 +17,6 @@ def smart_parse_pasted_data(text):
     rows = []
 
     for line in lines:
-        # split by tab OR multiple spaces
         if "\t" in line:
             parts = line.split("\t")
         else:
@@ -27,18 +26,16 @@ def smart_parse_pasted_data(text):
         if "present" in joined and "absent" in joined:
             continue
 
-        # PORTAL FORMAT
-        if len(parts) >= 9:
+        if len(parts) >= 9:  # portal format
             try:
-                present = int(parts[-5])   # ✅ correct
-                absent = int(parts[-2])    # ✅ correct
+                present = int(parts[-5])
+                absent = int(parts[-2])
                 subject = " ".join(parts[2:-6]).strip()
                 rows.append([subject, present, absent])
             except:
                 continue
 
-        # SIMPLE CSV / EXCEL FORMAT
-        elif len(parts) == 3:
+        elif len(parts) == 3:  # simple csv/excel
             try:
                 subject = parts[0].strip()
                 present = int(parts[1])
@@ -63,10 +60,16 @@ def finalize_df(df):
     df["Attendance%"] = (df["Present"] / df["Total"]) * 100
     return df
 
-def target_attendance(present, total, target):
+def classes_to_attend(present, total, target):
     x = sp.symbols("x")
     sol = sp.solve((present + x) / (total + x) - target / 100, x)
     return max(0, int(sol[0])) if sol else 0
+
+def classes_can_leave(present, total, target):
+    leave = 0
+    while total + leave > 0 and (present / (total + leave)) * 100 >= target:
+        leave += 1
+    return max(0, leave - 1)
 
 # ---------------- Charts ----------------
 def plot_bar_chart(df):
@@ -137,7 +140,7 @@ def generate_pdf(df, subject, target, needed,
     pdf.set_font("Arial","",11)
     pdf.cell(0,6,f"Subject: {subject}",ln=True)
     pdf.cell(0,6,f"Target %: {target}",ln=True)
-    pdf.cell(0,6,f"Classes needed: {needed}",ln=True)
+    pdf.cell(0,6,f"Classes needed to attend: {needed}",ln=True)
     pdf.cell(0,6,f"Target Aggregate %: {target_ag}",ln=True)
 
     return pdf.output(dest="S").encode("latin-1")
@@ -185,23 +188,34 @@ if df is not None:
     st.metric("Total Absent", total_absent)
     st.metric("Overall Attendance %", f"{overall:.1f}%")
 
-    st.subheader("🎯 Target Attendance")
-    target = st.number_input("Target %", 0, 100, 75)
+    # -------- Subject Target --------
+    st.subheader("🎯 Target Attendance (Subject)")
+    target = st.number_input("Target % (Subject)", 0, 100, 75)
     subject = st.selectbox("Select Subject", df["Subject"])
     row = df[df["Subject"] == subject].iloc[0]
-    needed = target_attendance(row["Present"], row["Total"], target)
+    needed = classes_to_attend(row["Present"], row["Total"], target)
     st.success(f"You need **{needed} more classes** in {subject}")
 
+    # -------- Aggregate Target --------
     st.subheader("🎯 Target Aggregate Attendance")
     target_ag = st.number_input("Target Aggregate %", 0, 100, 75)
-    needed_ag = target_attendance(total_present, total_classes, target_ag)
-    st.info(f"You need **{needed_ag} more classes overall**")
 
+    if target_ag > overall:
+        need = classes_to_attend(total_present, total_classes, target_ag)
+        st.warning(f"📌 You need to attend **{need} more classes** to reach {target_ag}%")
+    elif target_ag < overall:
+        leave = classes_can_leave(total_present, total_classes, target_ag)
+        st.success(f"😌 You can safely leave **{leave} classes** and still maintain {target_ag}%")
+    else:
+        st.info("✅ You are already exactly at the target aggregate attendance.")
+
+    # -------- Charts --------
     st.subheader("📈 Charts")
     plot_pie_chart(subject, row["Present"], row["Absent"])
     plot_bar_chart(df)
     plot_donut_charts(df)
 
+    # -------- PDF --------
     st.subheader("📄 Download PDF")
     pdf = generate_pdf(
         df, subject, target, needed,
