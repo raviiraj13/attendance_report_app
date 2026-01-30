@@ -131,15 +131,21 @@ def plot_donut_charts(df):
             colors=[PRESENT_COLOR, ABSENT_COLOR],
             wedgeprops={"width":0.35, "edgecolor":"white"}
         )
-        ax.text(0, 0, f"{r['Attendance%']:.0f}%", ha="center", va="center",
-                fontsize=12, fontweight="bold")
+        ax.text(
+            0, 0,
+            f"{r['Attendance%']:.0f}%",
+            ha="center",
+            va="center",
+            fontsize=12,
+            fontweight="bold"
+        )
         ax.set_title(r["Subject"], fontsize=10)
 
     st.pyplot(fig)
     plt.close()
 
 # ---------------- PDF ----------------
-def generate_pdf(df, total_present, total_absent, target_ag):
+def generate_pdf(df, total_present, total_absent):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial","B",18)
@@ -154,7 +160,11 @@ def generate_pdf(df, total_present, total_absent, target_ag):
 
     pdf.ln(4)
     for _, r in df.iterrows():
-        pdf.cell(0,6,f"{r['Subject']} - {r['Attendance%']:.1f}% ({r['Status']})",ln=True)
+        pdf.cell(
+            0, 6,
+            f"{r['Subject']} - {r['Attendance%']:.1f}% ({r['Status']})",
+            ln=True
+        )
 
     return pdf.output(dest="S").encode("latin-1")
 
@@ -172,6 +182,7 @@ if pasted.strip():
 
 # ---------------- OUTPUT ----------------
 if df is not None:
+    st.subheader("📋 Attendance Overview")
     st.dataframe(df)
 
     total_present = df["Present"].sum()
@@ -190,8 +201,26 @@ if df is not None:
     target_ag = st.number_input("Target (%)", 0, 100, 75)
 
     if target_ag > overall:
-        st.warning(f"Attend **{classes_to_attend(total_present, total_classes, target_ag)}** more classes")
+        need = classes_to_attend(total_present, total_classes, target_ag)
+        st.warning(f"📌 Attend **{need} more classes** to reach {target_ag}%")
     else:
-        st.success(f"You can leave **{classes_can_leave(total_present, total_classes, target_ag)}** classes")
+        leave = classes_can_leave(total_present, total_classes, target_ag)
+        st.success(f"😌 You can **leave {leave} classes** and still stay at {target_ag}%")
 
-    st.markdown("## 📈 Visual Insights
+    st.markdown("## 📈 Visual Insights")
+
+    subject = st.selectbox("Select Subject", df["Subject"])
+    row = df[df["Subject"] == subject].iloc[0]
+
+    plot_subject_pie(subject, row["Present"], row["Absent"])
+    plot_bar_chart(df)
+    plot_donut_charts(df)
+
+    st.subheader("📄 Download Report")
+    pdf = generate_pdf(df, total_present, total_absent)
+    st.download_button(
+        "📥 Download PDF",
+        pdf,
+        file_name="attendance_report.pdf",
+        mime="application/pdf"
+    )
