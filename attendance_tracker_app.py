@@ -8,19 +8,19 @@ import re
 
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
-st.title("📊 Attendance Tracker")
+st.title("Attendance Tracker")
 st.caption("Paste attendance data directly from your college portal")
 
-# ---------------- COLORS (MATCHING SCREENSHOT) ----------------
-PRESENT_COLOR = "#1ABC9C"   # Teal Green
+# ---------------- COLORS ----------------
+PRESENT_COLOR = "#1ABC9C"   # Teal
 ABSENT_COLOR  = "#F39C12"   # Orange
 BAR_COLORS    = ["#1ABC9C", "#16A085", "#2ECC71", "#F39C12", "#E67E22"]
 
-# ---------------- PDF SAFE TEXT ----------------
+# ---------------- PDF SAFE ----------------
 def clean_text(text):
     return text.encode("latin-1", "ignore").decode("latin-1")
 
-# ---------------- SAFE PASTE PARSER ----------------
+# ---------------- PARSER ----------------
 def smart_parse_pasted_data(text):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     rows = []
@@ -64,7 +64,7 @@ def smart_parse_pasted_data(text):
 
     return df.sort_values("Attendance%")
 
-# ---------------- UTILITIES ----------------
+# ---------------- MATH ----------------
 def classes_to_attend(present, total, target):
     x = sp.symbols("x")
     sol = sp.solve((present + x) / (total + x) - target / 100, x)
@@ -156,8 +156,6 @@ def generate_pdf(df, total_present, total_absent):
     pdf.ln(6)
     pdf.set_font("Arial", "", 12)
     pdf.cell(0, 7, clean_text(f"Overall Attendance: {overall:.1f}%"), ln=True)
-    pdf.cell(0, 7, clean_text(f"Total Present: {total_present}"), ln=True)
-    pdf.cell(0, 7, clean_text(f"Total Absent: {total_absent}"), ln=True)
 
     pdf.ln(6)
     pdf.set_font("Arial", "B", 14)
@@ -165,13 +163,16 @@ def generate_pdf(df, total_present, total_absent):
 
     pdf.set_font("Arial", "", 11)
     for _, r in df.iterrows():
-        line = f"{r['Subject']} - {r['Attendance%']:.1f}%"
-        pdf.cell(0, 6, clean_text(line), ln=True)
+        pdf.cell(
+            0, 6,
+            clean_text(f"{r['Subject']} - {r['Attendance%']:.1f}% ({r['Status']})"),
+            ln=True
+        )
 
     return pdf.output(dest="S").encode("latin-1")
 
 # ---------------- INPUT ----------------
-pasted = st.text_area("📋 Paste attendance data", height=300)
+pasted = st.text_area("Paste attendance data", height=300)
 df = None
 
 if pasted.strip():
@@ -199,8 +200,9 @@ if df is not None:
 
     plot_aggregate_pie(total_present, total_absent)
 
-    st.markdown("## Target Aggregate")
-    target_ag = st.number_input("Target (%)", 0, 100, 75)
+    # -------- TARGET AGGREGATE --------
+    st.markdown("## Target Aggregate Attendance")
+    target_ag = st.number_input("Aggregate target (%)", 0, 100, 75)
 
     if target_ag > overall:
         need = classes_to_attend(total_present, total_classes, target_ag)
@@ -209,18 +211,29 @@ if df is not None:
         leave = classes_can_leave(total_present, total_classes, target_ag)
         st.success(f"You can leave {leave} classes")
 
-    st.markdown("## Visual Insights")
+    # -------- TARGET SUBJECT --------
+    st.markdown("## Target Subject Attendance")
+    subject = st.selectbox("Select subject", df["Subject"])
+    target_sub = st.number_input("Subject target (%)", 0, 100, 75)
 
-    subject = st.selectbox("Select Subject", df["Subject"])
     row = df[df["Subject"] == subject].iloc[0]
+    need_sub = classes_to_attend(row["Present"], row["Total"], target_sub)
+    leave_sub = classes_can_leave(row["Present"], row["Total"], target_sub)
 
+    st.info(
+        f"{subject}: Attend {need_sub} more classes "
+        f"or you can leave {leave_sub} classes"
+    )
+
+    # -------- VISUALS --------
+    st.markdown("## Visual Insights")
     plot_subject_pie(subject, row["Present"], row["Absent"])
     plot_bar_chart(df)
     plot_donut_charts(df)
 
+    # -------- PDF --------
     st.subheader("Download Report")
     pdf = generate_pdf(df, total_present, total_absent)
-
     st.download_button(
         "Download PDF",
         pdf,
