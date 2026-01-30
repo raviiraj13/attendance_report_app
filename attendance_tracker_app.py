@@ -181,9 +181,9 @@ df = None
 if pasted.strip():
     try:
         df = smart_parse_pasted_data(pasted)
-        st.success("✅ Attendance parsed successfully")
+        st.success("✅ Attendance uploaded successfully")
     except Exception as e:
-        st.error("❌ Parsing failed")
+        st.error("❌ uploading failed")
         st.code(str(e))
 
 # ---------------- OUTPUT ----------------
