@@ -4,42 +4,40 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from fpdf import FPDF
 import sympy as sp
-import io
 import re
 
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
 st.title("📊 Attendance Tracker")
-st.write("Upload CSV, paste CSV URL, or paste copied attendance table (Excel / portal).")
+st.write("Upload CSV, paste CSV URL, or paste attendance table (Excel / portal).")
 
-# ---------------- SAFE PASTE PARSER ----------------
+# ---------------- SAFE & CORRECT PASTE PARSER ----------------
 def smart_parse_pasted_data(text):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     rows = []
 
     for line in lines:
-        # Split by TAB first, else by multiple spaces
+        # split by tab OR multiple spaces
         if "\t" in line:
             parts = line.split("\t")
         else:
             parts = re.split(r"\s{2,}", line)
 
-        # Ignore header rows
         joined = " ".join(parts).lower()
         if "present" in joined and "absent" in joined:
             continue
 
-        # Portal-style row
-        if len(parts) >= 8:
+        # PORTAL FORMAT
+        if len(parts) >= 9:
             try:
-                present = int(parts[-4])
-                absent = int(parts[-2])
-                subject = " ".join(parts[2:-5]).strip()
+                present = int(parts[-5])   # ✅ correct
+                absent = int(parts[-2])    # ✅ correct
+                subject = " ".join(parts[2:-6]).strip()
                 rows.append([subject, present, absent])
             except:
                 continue
 
-        # Simple Excel / CSV style
+        # SIMPLE CSV / EXCEL FORMAT
         elif len(parts) == 3:
             try:
                 subject = parts[0].strip()
@@ -55,10 +53,9 @@ def smart_parse_pasted_data(text):
     df = pd.DataFrame(rows, columns=["Subject", "Present", "Absent"])
     df["Total"] = df["Present"] + df["Absent"]
     df["Attendance%"] = (df["Present"] / df["Total"]) * 100
-
     return df
 
-# ---------------- Utility ----------------
+# ---------------- Utilities ----------------
 def finalize_df(df):
     df["Present"] = pd.to_numeric(df["Present"], errors="coerce").fillna(0)
     df["Absent"] = pd.to_numeric(df["Absent"], errors="coerce").fillna(0)
@@ -82,12 +79,10 @@ def plot_bar_chart(df):
 
 def plot_pie_chart(subject, present, absent):
     plt.figure(figsize=(5,5))
-    plt.pie(
-        [present, absent],
-        labels=["Present", "Absent"],
-        autopct="%1.1f%%",
-        startangle=90
-    )
+    plt.pie([present, absent],
+            labels=["Present","Absent"],
+            autopct="%1.1f%%",
+            startangle=90)
     plt.title(f"Attendance for {subject}")
     st.pyplot(plt)
     plt.close()
@@ -103,11 +98,9 @@ def plot_donut_charts(df):
             ax.axis("off")
             continue
         r = df.iloc[i]
-        ax.pie(
-            [r["Present"], r["Absent"]],
-            startangle=90,
-            wedgeprops=dict(width=0.4)
-        )
+        ax.pie([r["Present"], r["Absent"]],
+               startangle=90,
+               wedgeprops=dict(width=0.4))
         ax.set_title(f"{r['Subject']}\n{r['Attendance%']:.0f}%")
 
     st.pyplot(fig)
@@ -116,37 +109,36 @@ def plot_donut_charts(df):
 # ---------------- PDF ----------------
 def generate_pdf(df, subject, target, needed,
                  total_present, total_absent, target_ag):
-
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 18)
-    pdf.cell(0, 10, "Attendance Report", ln=True, align="C")
+    pdf.set_font("Arial","B",18)
+    pdf.cell(0,10,"Attendance Report",ln=True,align="C")
     pdf.ln(5)
 
     total_classes = total_present + total_absent
     overall = (total_present / total_classes) * 100 if total_classes else 0
 
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 7, f"Overall Attendance: {overall:.1f}%", ln=True)
-    pdf.cell(0, 7, f"Total Present: {total_present}", ln=True)
-    pdf.cell(0, 7, f"Total Absent: {total_absent}", ln=True)
+    pdf.set_font("Arial","",12)
+    pdf.cell(0,7,f"Overall Attendance: {overall:.1f}%",ln=True)
+    pdf.cell(0,7,f"Total Present: {total_present}",ln=True)
+    pdf.cell(0,7,f"Total Absent: {total_absent}",ln=True)
 
     pdf.ln(5)
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 8, "Subject-wise Attendance", ln=True)
-    pdf.set_font("Arial", "", 11)
+    pdf.set_font("Arial","B",14)
+    pdf.cell(0,8,"Subject-wise Attendance",ln=True)
+    pdf.set_font("Arial","",11)
 
     for _, r in df.iterrows():
-        pdf.cell(0, 6, f"{r['Subject']} - {r['Attendance%']:.1f}%", ln=True)
+        pdf.cell(0,6,f"{r['Subject']} - {r['Attendance%']:.1f}%",ln=True)
 
     pdf.ln(5)
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 8, "Target Analysis", ln=True)
-    pdf.set_font("Arial", "", 11)
-    pdf.cell(0, 6, f"Subject: {subject}", ln=True)
-    pdf.cell(0, 6, f"Target %: {target}", ln=True)
-    pdf.cell(0, 6, f"Classes needed: {needed}", ln=True)
-    pdf.cell(0, 6, f"Target Aggregate %: {target_ag}", ln=True)
+    pdf.set_font("Arial","B",14)
+    pdf.cell(0,8,"Target Analysis",ln=True)
+    pdf.set_font("Arial","",11)
+    pdf.cell(0,6,f"Subject: {subject}",ln=True)
+    pdf.cell(0,6,f"Target %: {target}",ln=True)
+    pdf.cell(0,6,f"Classes needed: {needed}",ln=True)
+    pdf.cell(0,6,f"Target Aggregate %: {target_ag}",ln=True)
 
     return pdf.output(dest="S").encode("latin-1")
 
@@ -159,7 +151,7 @@ option = st.radio(
 df = None
 
 if option == "Upload CSV":
-    file = st.file_uploader("Upload CSV file", type=["csv"])
+    file = st.file_uploader("Upload CSV", type=["csv"])
     if file:
         df = finalize_df(pd.read_csv(file))
 
@@ -173,7 +165,7 @@ elif option == "Paste Data":
     if pasted.strip():
         try:
             df = smart_parse_pasted_data(pasted)
-            st.success("✅ Pasted data parsed successfully!")
+            st.success("✅ Pasted data parsed correctly!")
         except Exception as e:
             st.error("❌ Unable to parse pasted data")
             st.code(str(e))
@@ -215,7 +207,6 @@ if df is not None:
         df, subject, target, needed,
         total_present, total_absent, target_ag
     )
-
     st.download_button(
         "📥 Download PDF",
         pdf,
