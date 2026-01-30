@@ -5,6 +5,7 @@ import seaborn as sns
 from fpdf import FPDF
 import sympy as sp
 import re
+import io
 
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
@@ -30,7 +31,7 @@ def smart_parse_pasted_data(text):
         if "present" in joined and "absent" in joined:
             continue
 
-        if len(parts) >= 9:  # portal format
+        if len(parts) >= 9:
             try:
                 present = int(parts[-5])
                 absent = int(parts[-2])
@@ -39,7 +40,7 @@ def smart_parse_pasted_data(text):
             except:
                 continue
 
-        elif len(parts) == 3:  # simple excel/csv
+        elif len(parts) == 3:
             try:
                 subject = parts[0].strip()
                 present = int(parts[1])
@@ -68,24 +69,10 @@ def classes_can_leave(present, total, target):
         leave += 1
     return max(0, leave - 1)
 
-# ---------------- CHARTS ----------------
-def plot_bar_chart(df):
-    plt.figure(figsize=(9,4))
-    palette = sns.color_palette("Set2", len(df))  # 🌈 colorful bars
-    sns.barplot(
-        x="Subject",
-        y="Present",
-        data=df,
-        palette=palette
-    )
-    plt.xticks(rotation=60, ha="right")
-    plt.title("Present Classes per Subject", fontsize=13)
-    st.pyplot(plt)
-    plt.close()
-
-def plot_pie_chart(subject, present, absent):
-    plt.figure(figsize=(5,5))
-    plt.pie(
+# ---------------- CHART GENERATORS (RETURN IMAGE BYTES) ----------------
+def pie_chart_image(subject, present, absent):
+    fig, ax = plt.subplots(figsize=(4,4))
+    ax.pie(
         [present, absent],
         labels=["Present","Absent"],
         autopct="%1.1f%%",
@@ -93,14 +80,31 @@ def plot_pie_chart(subject, present, absent):
         colors=[PRESENT_COLOR, ABSENT_COLOR],
         wedgeprops={"edgecolor":"white"}
     )
-    plt.title(f"{subject} Attendance")
-    st.pyplot(plt)
-    plt.close()
+    ax.set_title(f"{subject} Attendance")
 
-def plot_donut_charts(df):
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def bar_chart_image(df):
+    fig, ax = plt.subplots(figsize=(6,3))
+    palette = sns.color_palette("Set2", len(df))
+    sns.barplot(x="Subject", y="Present", data=df, palette=palette, ax=ax)
+    ax.set_title("Present Classes per Subject")
+    ax.tick_params(axis="x", rotation=60)
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def donut_charts_image(df):
     cols = 3
     rows = (len(df) + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(9, rows * 3))
+    fig, axes = plt.subplots(rows, cols, figsize=(6, rows * 2.5))
     axes = axes.flatten()
 
     for i, ax in enumerate(axes):
@@ -115,21 +119,26 @@ def plot_donut_charts(df):
             wedgeprops={"width":0.35, "edgecolor":"white"}
         )
         ax.text(0, 0, f"{r['Attendance%']:.0f}%",
-                ha="center", va="center", fontsize=12, fontweight="bold")
-        ax.set_title(r["Subject"], fontsize=10)
+                ha="center", va="center", fontsize=10, fontweight="bold")
+        ax.set_title(r["Subject"], fontsize=9)
 
-    st.pyplot(fig)
-    plt.close()
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
 
-# ---------------- PDF ----------------
-def generate_pdf(df, subject, target, needed,
-                 total_present, total_absent, target_ag):
+# ---------------- PDF WITH CHARTS ----------------
+def generate_pdf_with_charts(df, subject, target, needed,
+                             total_present, total_absent, target_ag):
 
     pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=10)
     pdf.add_page()
+
     pdf.set_font("Arial","B",18)
     pdf.cell(0,10,"Attendance Report",ln=True,align="C")
-    pdf.ln(6)
+    pdf.ln(5)
 
     total_classes = total_present + total_absent
     overall = (total_present / total_classes) * 100 if total_classes else 0
@@ -138,34 +147,28 @@ def generate_pdf(df, subject, target, needed,
     pdf.cell(0,7,f"Overall Attendance: {overall:.1f}%",ln=True)
     pdf.cell(0,7,f"Total Present: {total_present}",ln=True)
     pdf.cell(0,7,f"Total Absent: {total_absent}",ln=True)
+    pdf.ln(5)
 
-    pdf.ln(6)
-    pdf.set_font("Arial","B",14)
-    pdf.cell(0,8,"Subject-wise Attendance",ln=True)
-    pdf.set_font("Arial","",11)
+    # -------- Charts --------
+    pie = pie_chart_image(subject,
+                          df[df["Subject"]==subject]["Present"].iloc[0],
+                          df[df["Subject"]==subject]["Absent"].iloc[0])
+    bar = bar_chart_image(df)
+    donut = donut_charts_image(df)
 
-    for _, r in df.iterrows():
-        pdf.cell(0,6,f"{r['Subject']} - {r['Attendance%']:.1f}%",ln=True)
-
-    pdf.ln(6)
-    pdf.set_font("Arial","B",14)
-    pdf.cell(0,8,"Target Summary",ln=True)
-    pdf.set_font("Arial","",11)
-    pdf.cell(0,6,f"Target Aggregate %: {target_ag}",ln=True)
-    pdf.cell(0,6,f"Subject Target %: {target}",ln=True)
-    pdf.cell(0,6,f"Classes needed (subject): {needed}",ln=True)
+    pdf.image(pie, x=30, w=150)
+    pdf.add_page()
+    pdf.image(bar, x=15, w=180)
+    pdf.add_page()
+    pdf.image(donut, x=10, w=190)
 
     return pdf.output(dest="S").encode("latin-1")
 
 # ---------------- INPUT ----------------
 st.subheader("📋 Paste Attendance Data")
-pasted = st.text_area(
-    "Paste directly from your college portal / Excel",
-    height=300
-)
+pasted = st.text_area("Paste directly from your college portal / Excel", height=300)
 
 df = None
-
 if pasted.strip():
     try:
         df = smart_parse_pasted_data(pasted)
@@ -176,55 +179,31 @@ if pasted.strip():
 
 # ---------------- OUTPUT ----------------
 if df is not None:
-    st.subheader("📋 Attendance Overview")
-    st.dataframe(df)
-
     total_present = df["Present"].sum()
     total_absent = df["Absent"].sum()
     total_classes = total_present + total_absent
     overall = (total_present / total_classes) * 100 if total_classes else 0
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Present", total_present)
-    col2.metric("Total Absent", total_absent)
-    col3.metric("Overall %", f"{overall:.1f}%")
+    st.dataframe(df)
 
-    # -------- TARGET AGGREGATE --------
     st.markdown("## 🎯 Target Aggregate Attendance")
-    target_ag = st.number_input("Set your target aggregate (%)", 0, 100, 75)
+    target_ag = st.number_input("Target aggregate (%)", 0, 100, 75)
 
-    if target_ag > overall:
-        need = classes_to_attend(total_present, total_classes, target_ag)
-        st.warning(f"📌 Attend **{need} more classes** to reach {target_ag}%")
-    elif target_ag < overall:
-        leave = classes_can_leave(total_present, total_classes, target_ag)
-        st.success(f"😌 You can **leave {leave} classes** and still stay at {target_ag}%")
-    else:
-        st.info("✅ You are exactly at your target aggregate attendance")
-
-    # -------- TARGET SUBJECT --------
     st.markdown("## 🎯 Target Subject Attendance")
-    target = st.number_input("Set subject target (%)", 0, 100, 75)
+    target = st.number_input("Target subject (%)", 0, 100, 75)
     subject = st.selectbox("Select Subject", df["Subject"])
     row = df[df["Subject"] == subject].iloc[0]
     needed = classes_to_attend(row["Present"], row["Total"], target)
-    st.info(f"📘 Attend **{needed} more classes** in **{subject}** to reach {target}%")
 
-    # -------- CHARTS --------
-    st.subheader("📈 Visual Insights")
-    plot_pie_chart(subject, row["Present"], row["Absent"])
-    plot_bar_chart(df)
-    plot_donut_charts(df)
-
-    # -------- PDF DOWNLOAD --------
-    st.subheader("📄 Download Report")
-    pdf = generate_pdf(
+    st.subheader("📄 Download PDF (with charts)")
+    pdf_bytes = generate_pdf_with_charts(
         df, subject, target, needed,
         total_present, total_absent, target_ag
     )
+
     st.download_button(
-        "📥 Download PDF",
-        pdf,
-        file_name="attendance_report.pdf",
+        "📥 Download Full PDF Report",
+        pdf_bytes,
+        file_name="attendance_report_with_charts.pdf",
         mime="application/pdf"
     )
