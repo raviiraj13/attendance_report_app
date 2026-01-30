@@ -58,7 +58,6 @@ def smart_parse_pasted_data(text):
         axis=1
     )
 
-    # 🟢 / 🔴 DOT STATUS
     df["Status"] = df["Attendance%"].apply(
         lambda x: "🟢" if x >= 75 else "🔴"
     )
@@ -78,6 +77,9 @@ def classes_can_leave(present, total, target):
     while (present / (total + leave)) * 100 >= target:
         leave += 1
     return max(0, leave - 1)
+
+def aggregate_after_leave(present, total, leave):
+    return (present / (total + leave)) * 100 if (total + leave) > 0 else 0
 
 # ---------------- CHARTS ----------------
 def plot_aggregate_pie(present, absent):
@@ -136,11 +138,9 @@ def plot_donut_charts(df):
             startangle=90,
             wedgeprops={"width": 0.35, "edgecolor": "white"}
         )
-        ax.text(
-            0, 0, f"{r['Attendance%']:.0f}%",
-            ha="center", va="center",
-            fontsize=12, fontweight="bold"
-        )
+        ax.text(0, 0, f"{r['Attendance%']:.0f}%",
+                ha="center", va="center",
+                fontsize=12, fontweight="bold")
         ax.set_title(r["Subject"], fontsize=10)
 
     st.pyplot(fig)
@@ -181,27 +181,22 @@ df = None
 if pasted.strip():
     try:
         df = smart_parse_pasted_data(pasted)
-        st.success("✅ Attendance uploaded successfully")
+        st.success("✅ Attendance parsed successfully")
     except Exception as e:
-        st.error("❌ uploading failed")
+        st.error("❌ Parsing failed")
         st.code(str(e))
 
 # ---------------- OUTPUT ----------------
 if df is not None:
     st.subheader("📋 Attendance Overview")
 
-    # ✅ STYLE ONLY STATUS COLUMN (NO FULL ROW COLOR)
     def style_status(row):
         styles = []
         for col in row.index:
             if col == "Status" and row["Status"] == "🔴":
-                styles.append(
-                    "background-color:#FDEDEC; color:#C0392B; font-weight:bold; text-align:center;"
-                )
+                styles.append("background-color:#FDEDEC; color:#C0392B; font-weight:bold; text-align:center;")
             elif col == "Status" and row["Status"] == "🟢":
-                styles.append(
-                    "background-color:#E8F8F5; color:#1E8449; font-weight:bold; text-align:center;"
-                )
+                styles.append("background-color:#E8F8F5; color:#1E8449; font-weight:bold; text-align:center;")
             else:
                 styles.append("")
         return styles
@@ -229,7 +224,23 @@ if df is not None:
         st.warning(f"⚠️ Attend {need} more classes")
     else:
         leave = classes_can_leave(total_present, total_classes, target_ag)
-        st.success(f"🥳 You can leave {leave} classes")
+        st.success(f"😌 You can leave {leave} classes")
+
+    # 🧮 WHAT-IF SECTION (NEW)
+    st.markdown("## 🧮 What if I leave some classes?")
+    leave_input = st.number_input(
+        "Enter number of classes you plan to leave",
+        min_value=0,
+        step=1
+    )
+
+    new_agg = aggregate_after_leave(total_present, total_classes, leave_input)
+    st.info(f"📊 New aggregate attendance will be **{new_agg:.2f}%**")
+
+    if new_agg < target_ag:
+        st.warning("⚠️ This will drop you below your target!")
+    else:
+        st.success("✅ You are still above your target")
 
     # 🎯 Subject Target
     st.markdown("## 🎯 Target Subject Attendance")
