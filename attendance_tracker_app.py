@@ -30,7 +30,7 @@ def smart_parse_pasted_data(text):
         if "present" in joined and "absent" in joined:
             continue
 
-        if len(parts) >= 9:
+        if len(parts) >= 9:  # portal format
             try:
                 present = int(parts[-5])
                 absent = int(parts[-2])
@@ -39,7 +39,7 @@ def smart_parse_pasted_data(text):
             except:
                 continue
 
-        elif len(parts) == 3:
+        elif len(parts) == 3:  # simple excel/csv
             try:
                 subject = parts[0].strip()
                 present = int(parts[1])
@@ -69,23 +69,9 @@ def classes_can_leave(present, total, target):
     return max(0, leave - 1)
 
 # ---------------- CHARTS ----------------
-def plot_aggregate_pie(total_present, total_absent):
-    plt.figure(figsize=(5,5))
-    plt.pie(
-        [total_present, total_absent],
-        labels=["Present", "Absent"],
-        autopct="%1.1f%%",
-        startangle=90,
-        colors=[PRESENT_COLOR, ABSENT_COLOR],
-        wedgeprops={"edgecolor": "white"}
-    )
-    plt.title("Aggregate Attendance")
-    st.pyplot(plt)
-    plt.close()
-
 def plot_bar_chart(df):
     plt.figure(figsize=(9,4))
-    palette = sns.color_palette("Set2", len(df))
+    palette = sns.color_palette("Set2", len(df))  # 🌈 colorful bars
     sns.barplot(
         x="Subject",
         y="Present",
@@ -128,11 +114,8 @@ def plot_donut_charts(df):
             colors=[PRESENT_COLOR, ABSENT_COLOR],
             wedgeprops={"width":0.35, "edgecolor":"white"}
         )
-        ax.text(
-            0, 0, f"{r['Attendance%']:.0f}%",
-            ha="center", va="center",
-            fontsize=12, fontweight="bold"
-        )
+        ax.text(0, 0, f"{r['Attendance%']:.0f}%",
+                ha="center", va="center", fontsize=12, fontweight="bold")
         ax.set_title(r["Subject"], fontsize=10)
 
     st.pyplot(fig)
@@ -205,9 +188,6 @@ if df is not None:
     col1.metric("Total Present", total_present)
     col2.metric("Total Absent", total_absent)
     col3.metric("Overall %", f"{overall:.1f}%")
-
-    # ✅ Aggregate Pie Chart (same colors)
-    plot_aggregate_pie(total_present, total_absent)
 
     # -------- TARGET AGGREGATE --------
     st.markdown("## 🎯 Target Aggregate Attendance")
