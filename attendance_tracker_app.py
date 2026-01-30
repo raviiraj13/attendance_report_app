@@ -121,7 +121,7 @@ def plot_subject_pie(subject, present, absent):
 def plot_donut_charts(df):
     cols = 3
     rows = (len(df) + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(9, rows * 3))
+    fig, axes = plt.subplots(rows, cols, figsize=(9, rows * 3.8))
     axes = axes.flatten()
 
     for i, ax in enumerate(axes):
@@ -130,21 +130,37 @@ def plot_donut_charts(df):
             continue
 
         r = df.iloc[i]
+
         ax.pie(
             [r["Present"], r["Absent"]],
             colors=[PRESENT_COLOR, ABSENT_COLOR],
             startangle=90,
             wedgeprops={"width": 0.35, "edgecolor": "white"}
         )
-        ax.text(
-            0, 0, f"{r['Attendance%']:.0f}%",
-            ha="center", va="center",
-            fontsize=12, fontweight="bold"
-        )
-        ax.set_title(r["Subject"], fontsize=10)
 
+        ax.text(
+            0, 0,
+            f"{r['Attendance%']:.0f}%",
+            ha="center",
+            va="center",
+            fontsize=11,
+            fontweight="bold"
+        )
+
+        # ✅ Manual line break for long subject names (NO IMPORT)
+        title = r["Subject"]
+        if len(title) > 22:
+            mid = len(title) // 2
+            split_at = title.rfind(" ", 0, mid)
+            if split_at != -1:
+                title = title[:split_at] + "\n" + title[split_at+1:]
+
+        ax.set_title(title, fontsize=9, pad=12)
+
+    plt.tight_layout(pad=2.5)
     st.pyplot(fig)
     plt.close()
+
 
 # ---------------- PDF ----------------
 def generate_pdf(df, total_present, total_absent):
