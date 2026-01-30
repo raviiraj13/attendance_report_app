@@ -229,7 +229,7 @@ if df is not None:
         st.warning(f"⚠️ Attend {need} more classes")
     else:
         leave = classes_can_leave(total_present, total_classes, target_ag)
-        st.success(f"😌 You can leave {leave} classes")
+        st.success(f"🥳 You can leave {leave} classes")
 
     # 🎯 Subject Target
     st.markdown("## 🎯 Target Subject Attendance")
