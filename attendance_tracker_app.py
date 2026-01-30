@@ -11,10 +11,14 @@ st.set_page_config(page_title="Attendance Tracker", layout="wide")
 st.title("📊 Attendance Tracker")
 st.caption("Paste attendance data directly from your college portal")
 
-# ---------------- MODERN COLOR THEME ----------------
-PRESENT_COLOR = "#4F46E5"   # Indigo
-ABSENT_COLOR  = "#F97316"   # Orange
-BAR_COLORS    = ["#6366F1", "#22C55E", "#F59E0B", "#EF4444", "#06B6D4"]
+# ---------------- COLORS (MATCHING SCREENSHOT) ----------------
+PRESENT_COLOR = "#1ABC9C"   # Teal Green
+ABSENT_COLOR  = "#F39C12"   # Orange
+BAR_COLORS    = ["#1ABC9C", "#16A085", "#2ECC71", "#F39C12", "#E67E22"]
+
+# ---------------- PDF SAFE TEXT ----------------
+def clean_text(text):
+    return text.encode("latin-1", "ignore").decode("latin-1")
 
 # ---------------- SAFE PASTE PARSER ----------------
 def smart_parse_pasted_data(text):
@@ -55,7 +59,7 @@ def smart_parse_pasted_data(text):
     )
 
     df["Status"] = df["Attendance%"].apply(
-        lambda x: "Safe ✅" if x >= 75 else "Risk ⚠️"
+        lambda x: "Safe" if x >= 75 else "Risk"
     )
 
     return df.sort_values("Attendance%")
@@ -127,18 +131,13 @@ def plot_donut_charts(df):
         r = df.iloc[i]
         ax.pie(
             [r["Present"], r["Absent"]],
-            startangle=90,
             colors=[PRESENT_COLOR, ABSENT_COLOR],
-            wedgeprops={"width":0.35, "edgecolor":"white"}
+            startangle=90,
+            wedgeprops={"width": 0.35, "edgecolor": "white"}
         )
-        ax.text(
-            0, 0,
-            f"{r['Attendance%']:.0f}%",
-            ha="center",
-            va="center",
-            fontsize=12,
-            fontweight="bold"
-        )
+        ax.text(0, 0, f"{r['Attendance%']:.0f}%",
+                ha="center", va="center",
+                fontsize=12, fontweight="bold")
         ax.set_title(r["Subject"], fontsize=10)
 
     st.pyplot(fig)
@@ -148,23 +147,26 @@ def plot_donut_charts(df):
 def generate_pdf(df, total_present, total_absent):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial","B",18)
-    pdf.cell(0,10,"Attendance Report",ln=True,align="C")
+    pdf.set_font("Arial", "B", 18)
+    pdf.cell(0, 10, clean_text("Attendance Report"), ln=True, align="C")
 
     total = total_present + total_absent
     overall = (total_present / total) * 100 if total else 0
 
-    pdf.set_font("Arial","",12)
     pdf.ln(6)
-    pdf.cell(0,7,f"Overall Attendance: {overall:.1f}%",ln=True)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 7, clean_text(f"Overall Attendance: {overall:.1f}%"), ln=True)
+    pdf.cell(0, 7, clean_text(f"Total Present: {total_present}"), ln=True)
+    pdf.cell(0, 7, clean_text(f"Total Absent: {total_absent}"), ln=True)
 
-    pdf.ln(4)
+    pdf.ln(6)
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 8, clean_text("Subject-wise Attendance"), ln=True)
+
+    pdf.set_font("Arial", "", 11)
     for _, r in df.iterrows():
-        pdf.cell(
-            0, 6,
-            f"{r['Subject']} - {r['Attendance%']:.1f}% ({r['Status']})",
-            ln=True
-        )
+        line = f"{r['Subject']} - {r['Attendance%']:.1f}%"
+        pdf.cell(0, 6, clean_text(line), ln=True)
 
     return pdf.output(dest="S").encode("latin-1")
 
@@ -175,14 +177,14 @@ df = None
 if pasted.strip():
     try:
         df = smart_parse_pasted_data(pasted)
-        st.success("✅ Attendance parsed successfully")
+        st.success("Attendance parsed successfully")
     except Exception as e:
-        st.error("❌ Parsing failed")
+        st.error("Parsing failed")
         st.code(str(e))
 
 # ---------------- OUTPUT ----------------
 if df is not None:
-    st.subheader("📋 Attendance Overview")
+    st.subheader("Attendance Overview")
     st.dataframe(df)
 
     total_present = df["Present"].sum()
@@ -197,17 +199,17 @@ if df is not None:
 
     plot_aggregate_pie(total_present, total_absent)
 
-    st.markdown("## 🎯 Target Aggregate")
+    st.markdown("## Target Aggregate")
     target_ag = st.number_input("Target (%)", 0, 100, 75)
 
     if target_ag > overall:
         need = classes_to_attend(total_present, total_classes, target_ag)
-        st.warning(f"📌 Attend **{need} more classes** to reach {target_ag}%")
+        st.warning(f"Attend {need} more classes")
     else:
         leave = classes_can_leave(total_present, total_classes, target_ag)
-        st.success(f"😌 You can **leave {leave} classes** and still stay at {target_ag}%")
+        st.success(f"You can leave {leave} classes")
 
-    st.markdown("## 📈 Visual Insights")
+    st.markdown("## Visual Insights")
 
     subject = st.selectbox("Select Subject", df["Subject"])
     row = df[df["Subject"] == subject].iloc[0]
@@ -216,10 +218,11 @@ if df is not None:
     plot_bar_chart(df)
     plot_donut_charts(df)
 
-    st.subheader("📄 Download Report")
+    st.subheader("Download Report")
     pdf = generate_pdf(df, total_present, total_absent)
+
     st.download_button(
-        "📥 Download PDF",
+        "Download PDF",
         pdf,
         file_name="attendance_report.pdf",
         mime="application/pdf"
