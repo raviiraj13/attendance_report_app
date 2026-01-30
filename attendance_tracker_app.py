@@ -58,7 +58,7 @@ def smart_parse_pasted_data(text):
         axis=1
     )
 
-    # 🔴🟢 DOT STATUS
+    # 🟢 / 🔴 DOT STATUS
     df["Status"] = df["Attendance%"].apply(
         lambda x: "🟢" if x >= 75 else "🔴"
     )
@@ -190,10 +190,23 @@ if pasted.strip():
 if df is not None:
     st.subheader("📋 Attendance Overview")
 
-    def highlight_risk(row):
-        return ["background-color: #FDEDEC" if row["Status"] == "🔴" else "" for _ in row]
+    # ✅ STYLE ONLY STATUS COLUMN (NO FULL ROW COLOR)
+    def style_status(row):
+        styles = []
+        for col in row.index:
+            if col == "Status" and row["Status"] == "🔴":
+                styles.append(
+                    "background-color:#FDEDEC; color:#C0392B; font-weight:bold; text-align:center;"
+                )
+            elif col == "Status" and row["Status"] == "🟢":
+                styles.append(
+                    "background-color:#E8F8F5; color:#1E8449; font-weight:bold; text-align:center;"
+                )
+            else:
+                styles.append("")
+        return styles
 
-    st.dataframe(df.style.apply(highlight_risk, axis=1))
+    st.dataframe(df.style.apply(style_status, axis=1))
 
     total_present = df["Present"].sum()
     total_absent = df["Absent"].sum()
