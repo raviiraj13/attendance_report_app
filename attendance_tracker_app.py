@@ -12,10 +12,10 @@ st.title("📊 Attendance Tracker")
 st.caption("Paste attendance data directly from your college portal")
 
 # ---------------- COLOR THEME ----------------
-PRESENT_COLOR = "#4CAF50"   # modern green
-ABSENT_COLOR  = "#FF7043"   # modern soft red
+PRESENT_COLOR = "#4CAF50"
+ABSENT_COLOR  = "#FF7043"
 
-# ---------------- SAFE & CORRECT PASTE PARSER ----------------
+# ---------------- SAFE PASTE PARSER ----------------
 def smart_parse_pasted_data(text):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     rows = []
@@ -30,7 +30,6 @@ def smart_parse_pasted_data(text):
         if "present" in joined and "absent" in joined:
             continue
 
-        # Portal format
         if len(parts) >= 9:
             try:
                 present = int(parts[-5])
@@ -40,7 +39,6 @@ def smart_parse_pasted_data(text):
             except:
                 continue
 
-        # Simple Excel / CSV
         elif len(parts) == 3:
             try:
                 subject = parts[0].strip()
@@ -73,12 +71,17 @@ def classes_can_leave(present, total, target):
 # ---------------- CHARTS ----------------
 def plot_bar_chart(df):
     plt.figure(figsize=(9,4))
+
+    # 🌈 Colorful bars (one color per subject)
+    palette = sns.color_palette("Set2", len(df))
+
     sns.barplot(
         x="Subject",
         y="Present",
         data=df,
-        color=PRESENT_COLOR
+        palette=palette
     )
+
     plt.xticks(rotation=60, ha="right")
     plt.title("Present Classes per Subject", fontsize=13)
     st.pyplot(plt)
@@ -92,7 +95,7 @@ def plot_pie_chart(subject, present, absent):
         autopct="%1.1f%%",
         startangle=90,
         colors=[PRESENT_COLOR, ABSENT_COLOR],
-        wedgeprops={"edgecolor": "white"}
+        wedgeprops={"edgecolor":"white"}
     )
     plt.title(f"{subject} Attendance")
     st.pyplot(plt)
@@ -122,42 +125,7 @@ def plot_donut_charts(df):
     st.pyplot(fig)
     plt.close()
 
-# ---------------- PDF ----------------
-def generate_pdf(df, subject, target, needed,
-                 total_present, total_absent, target_ag):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial","B",18)
-    pdf.cell(0,10,"Attendance Report",ln=True,align="C")
-    pdf.ln(6)
-
-    total_classes = total_present + total_absent
-    overall = (total_present / total_classes) * 100 if total_classes else 0
-
-    pdf.set_font("Arial","",12)
-    pdf.cell(0,7,f"Overall Attendance: {overall:.1f}%",ln=True)
-    pdf.cell(0,7,f"Total Present: {total_present}",ln=True)
-    pdf.cell(0,7,f"Total Absent: {total_absent}",ln=True)
-
-    pdf.ln(6)
-    pdf.set_font("Arial","B",14)
-    pdf.cell(0,8,"Subject-wise Attendance",ln=True)
-    pdf.set_font("Arial","",11)
-
-    for _, r in df.iterrows():
-        pdf.cell(0,6,f"{r['Subject']} - {r['Attendance%']:.1f}%",ln=True)
-
-    pdf.ln(6)
-    pdf.set_font("Arial","B",14)
-    pdf.cell(0,8,"Target Summary",ln=True)
-    pdf.set_font("Arial","",11)
-    pdf.cell(0,6,f"Target Aggregate %: {target_ag}",ln=True)
-    pdf.cell(0,6,f"Subject Target %: {target}",ln=True)
-    pdf.cell(0,6,f"Classes needed (subject): {needed}",ln=True)
-
-    return pdf.output(dest="S").encode("latin-1")
-
-# ---------------- INPUT (ONLY COPY–PASTE) ----------------
+# ---------------- INPUT ----------------
 st.subheader("📋 Paste Attendance Data")
 pasted = st.text_area(
     "Paste directly from your college portal / Excel",
@@ -215,16 +183,3 @@ if df is not None:
     plot_pie_chart(subject, row["Present"], row["Absent"])
     plot_bar_chart(df)
     plot_donut_charts(df)
-
-    # -------- PDF --------
-    st.subheader("📄 Download Report")
-    pdf = generate_pdf(
-        df, subject, target, needed,
-        total_present, total_absent, target_ag
-    )
-    st.download_button(
-        "📥 Download PDF",
-        pdf,
-        file_name="attendance_report.pdf",
-        mime="application/pdf"
-    )
