@@ -10,7 +10,7 @@ import re
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
 
 st.title("📊 Attendance Tracker")
-st.caption("Chill bro, Pravah🎊 hai… jayada Attendance mat dekh😎")
+st.caption("8th April 🗓️ say midterm hai Acha say class attend karo warna Debarr ho jaoge 🧮")
 st.caption("Paste the Attendance from college ERP")
 
 # ---------------- COLORS ----------------
