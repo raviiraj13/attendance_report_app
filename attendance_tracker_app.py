@@ -67,7 +67,7 @@ def parse_attendance(text):
 
     df["Total Classes"] = (
         df["Present"] +
-        df["Absent"]
+        df["Absent"]-df["OD"]
     )
 
     df["Attendance%"] = (
