@@ -93,7 +93,7 @@ def plot_attendance_percentage_pie(aggregate_attendance):
     plt.figure(figsize=(6,6))
 
     plt.pie(
-        [aggregrate_attendance, remaining_percent],
+        [aggregate_attendance, remaining_percent],
         labels=[
             f"Attendance {aggregate_attendance:.2f}%",
             f"Remaining {remaining_percent:.2f}%"
