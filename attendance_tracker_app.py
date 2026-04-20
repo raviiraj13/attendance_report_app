@@ -84,12 +84,11 @@ def parse_attendance(text):
 # ---------------- PIE CHART ----------------
 def plot_attendance_percentage_pie(aggregate_attendance):
 
+    remaining_percent = 100 - aggregate_attendance
 
-    remaining_percent = 100 - attendance_attendance
+    fig, ax = plt.subplots(figsize=(6, 6))
 
-    plt.figure(figsize=(6,6))
-
-    plt.pie(
+    ax.pie(
         [aggregate_attendance, remaining_percent],
         labels=[
             f"Attendance {aggregate_attendance:.2f}%",
@@ -100,11 +99,10 @@ def plot_attendance_percentage_pie(aggregate_attendance):
         startangle=90
     )
 
-    plt.title("Aggregate Attendance Percentage")
+    ax.set_title("Aggregate Attendance Percentage")
 
-    st.pyplot(plt)
-
-    plt.close()
+    st.pyplot(fig)
+    plt.close(fig)
 
 # ---------------- MATH ----------------
 def classes_needed(present, total, target):
@@ -205,6 +203,9 @@ if text:
         aggregate_present /
         total_classes * 100
     )
+    if total_classes == 0:
+    st.error("No valid class data found")
+    st.stop()
 
     st.subheader("Overall Summary")
 
@@ -226,7 +227,7 @@ if text:
 
     # ---------------- PIE CHART ----------------
     plot_attendance_percentage_pie(
-        aggregate_attendance,
+        aggregate_attendance
         
     )
 
