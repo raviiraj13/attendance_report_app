@@ -82,22 +82,17 @@ def parse_attendance(text):
     return df.sort_values("Attendance%")
 
 # ---------------- PIE CHART ----------------
-def plot_attendance_percentage_pie(aggregate_present, total_present, total_absent):
+def plot_attendance_percentage_pie(aggregate_attendance):
 
-    total_classes = total_present + total_absent
 
-    attendance_percent = (
-        aggregate_present / total_classes * 100
-    )
-
-    remaining_percent = 100 - attendance_percent
+    remaining_percent = 100 - attendance_attendance
 
     plt.figure(figsize=(6,6))
 
     plt.pie(
-        [attendance_percent, remaining_percent],
+        [aggregate_attendance, remaining_percent],
         labels=[
-            f"Attendance {attendance_percent:.2f}%",
+            f"Attendance {aggregate_attendance:.2f}%",
             f"Remaining {remaining_percent:.2f}%"
         ],
         autopct="%1.1f%%",
@@ -231,9 +226,8 @@ if text:
 
     # ---------------- PIE CHART ----------------
     plot_attendance_percentage_pie(
-        aggregate_present,
-        total_present,
-        total_absent
+        aggregate_attendance,
+        
     )
 
     # ---------------- TARGET OPTIMIZER ----------------
