@@ -203,7 +203,7 @@ if text:
 
     total_classes = (
         total_present +
-        total_absent
+        total_absent+total_od
     )
 
     aggregate_attendance = (
