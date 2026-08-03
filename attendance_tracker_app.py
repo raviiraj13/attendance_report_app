@@ -350,3 +350,40 @@ if text:
         pdf,
         "attendance_report.pdf"
     )
+# ---------------- LEAVE + RECOVERY ----------------
+st.subheader("📚 Leave & Recovery Calculator")
+
+leave_classes = st.number_input(
+    "If I leave this many classes",
+    min_value=0,
+    value=0,
+    step=1,
+    key="leave_recovery"
+)
+
+future_total = total_classes + leave_classes
+future_attendance = aggregate_present / future_total * 100
+
+st.metric(
+    "Attendance after leaving",
+    f"{future_attendance:.2f}%"
+)
+
+extra_classes = classes_needed(
+    aggregate_present,
+    future_total,
+    target
+)
+
+if extra_classes == 0:
+    st.success(
+        f"✅ Even after leaving {leave_classes} classes, your attendance remains above {target}%."
+    )
+else:
+    st.error(
+        f"❌ After leaving {leave_classes} classes, your attendance becomes {future_attendance:.2f}%."
+    )
+
+    st.info(
+        f"📖 You must attend **{extra_classes} more consecutive classes** to reach **{target}%** attendance again."
+    )
