@@ -10,8 +10,7 @@ import re
 st.set_page_config(page_title="Attendance Tracker", layout="wide")
 
 st.title("📊 Attendance Tracker")
-st.caption("8th April 🗓️ say midterm hai Acha say class attend karo warna Debarr ho jaoge 🧮")
-st.caption("🚫Current not working properly if od is present in Attendance report.It will fix from ourside as soon as possible")
+
 st.caption("Paste the Attendance from college ERP")
 
 # ---------------- COLORS ----------------
