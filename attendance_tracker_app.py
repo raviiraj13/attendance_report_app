@@ -7,7 +7,7 @@ import math
 import re
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Attendance Tracker", layout="wide")
+st.set_page_config(page_title="Attendance Tracker🥳", layout="wide")
 
 st.title("📊 Attendance Tracker")
 
