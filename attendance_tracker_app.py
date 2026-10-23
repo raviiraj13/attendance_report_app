@@ -17,9 +17,12 @@ def classes_needed(present, total, target):
         return 0
     if target >= 100:
         return math.inf
-    return max(0, math.ceil(
-        (target * total - 100 * present) / (100 - target) - 1e-10
-    ))
+    return max(
+        0,
+        math.ceil(
+            (target * total - 100 * present) / (100 - target) - 1e-10
+        )
+    )
 
 
 def classes_can_leave(present, total, target):
@@ -27,102 +30,83 @@ def classes_can_leave(present, total, target):
         return math.inf
     if percentage(present, total) < target:
         return 0
-    return max(0, math.floor(
-        (100 * present / target) - total + 1e-10
-    ))
+    return max(
+        0,
+        math.floor(100 * present / target - total + 1e-10)
+    )
 
 
+# ---------- ERP PARSER ----------
 def parse_attendance(text):
     rows = []
+
     for line in text.splitlines():
         parts = re.split(r"\t+", line.strip())
-        if len(parts) < 9 or not parts[0].isdigit():
+
+        if len(parts) < 9 or not parts[0].strip().isdigit():
             continue
+
         try:
             rows.append([
-                parts[2].strip(),
+                parts[1].strip(),  # Subject code
+                parts[2].strip(),  # Subject
+                parts[3].strip(),  # Subject type
                 int(parts[4]),
                 int(parts[5]),
                 int(parts[6]),
-                int(parts[7])
+                int(parts[7]),
             ])
         except (ValueError, IndexError):
             continue
 
     df = pd.DataFrame(
         rows,
-        columns=["Subject", "Present", "OD", "Makeup", "Absent"]
+        columns=[
+            "Subject Code", "Subject", "Subject Type",
+            "Present", "OD", "Makeup", "Absent"
+        ]
     )
 
-    if not df.empty:
-        df["Effective Present"] = df["Present"] + df["OD"] + df["Makeup"]
-        df["Total Classes"] = df["Present"] + df["Absent"]
-        df["Attendance %"] = (
-            df["Effective Present"]
-            / df["Total Classes"].replace(0, float("nan")) * 100
-        ).round(2)
+    if df.empty:
+        return df
+
+    df["Effective Present"] = (
+        df["Present"] + df["OD"] + df["Makeup"]
+    )
+
+    df["Total Classes"] = df["Present"] + df["Absent"]
+
+    df["Attendance %"] = (
+        df["Effective Present"]
+        / df["Total Classes"].replace(0, float("nan"))
+        * 100
+    ).round(2)
 
     return df
 
 
-# ---------- CURRENT ATTENDANCE INPUT ----------
-st.subheader("1️⃣ Set your current attendance")
+# ---------- FIRST: PASTE ERP ATTENDANCE ----------
+st.subheader("1️⃣ Paste your ERP attendance report")
 
-input_mode = st.radio(
-    "How do you want to enter your attendance?",
-    ["Enter totals manually", "Paste ERP report"],
-    horizontal=True
+erp_text = st.text_area(
+    "Copy and paste the complete attendance table from your college ERP",
+    height=260,
+    placeholder=(
+        "Paste the table with columns: #, Subject Code, Subject, "
+        "Subject Type, Present, OD, Makeup, Absent, Percentage"
+    )
 )
 
-if input_mode == "Enter totals manually":
-    col1, col2 = st.columns(2)
-    with col1:
-        current_present = st.number_input(
-            "Current attended classes/hours",
-            min_value=0, value=292, step=1
-        )
-    with col2:
-        current_absent = st.number_input(
-            "Current missed classes/hours",
-            min_value=0, value=104, step=1
-        )
+df = parse_attendance(erp_text)
 
-    event_present = 0
-    event_absent = 0
-    df = pd.DataFrame()
+if df.empty:
+    st.info("Paste your ERP report above to activate the attendance calculators.")
+    st.stop()
 
-else:
-    erp_text = st.text_area(
-        "Paste complete ERP attendance report",
-        height=220
-    )
-
-    event_col1, event_col2 = st.columns(2)
-    with event_col1:
-        event_present = st.number_input(
-            "Additional event hours attended",
-            min_value=0, value=12, step=1
-        )
-    with event_col2:
-        event_absent = st.number_input(
-            "Additional event hours missed",
-            min_value=0, value=12, step=1
-        )
-
-    df = parse_attendance(erp_text)
-
-    if df.empty:
-        st.info("Paste the ERP table to calculate your current attendance.")
-        st.stop()
-
-    current_present = int(df["Effective Present"].sum()) + event_present
-    current_absent = int(df["Absent"].sum()) + event_absent
-
-current_total = current_present + current_absent
-current_pct = percentage(current_present, current_total)
+st.success(f"Successfully loaded attendance for {len(df)} subjects.")
 
 # ---------- TARGET ----------
-st.subheader("2️⃣ Set your attendance target")
+st.subheader("2️⃣ Set your target")
 
 target = st.slider(
     "Target attendance (%)",
@@ -132,23 +116,100 @@ target = st.slider(
     step=1
 )
 
+# ---------- EVENT HOURS ----------
+st.subheader("📅 Additional event attendance")
+
+st.caption(
+    "Event hours affect aggregate attendance, not subject-wise attendance. "
+    "For example, Techpravah: 12 present and 12 absent."
+)
+
+event_col1, event_col2 = st.columns(2)
+
+with event_col1:
+    event_present = st.number_input(
+        "Event hours attended",
+        min_value=0,
+        value=12,
+        step=1
+    )
+
+with event_col2:
+    event_absent = st.number_input(
+        "Event hours missed",
+        min_value=0,
+        value=12,
+        step=1
+    )
+
+# ---------- SUBJECT-WISE ATTENDANCE ----------
+st.subheader("3️⃣ Subject-wise attendance")
+
+st.caption(
+    f"🟢 Green = at or above {target}%  |  🔴 Red = below {target}%"
+)
+
+display_df = df.copy()
+
+display_df["Status"] = display_df["Attendance %"].apply(
+    lambda value: (
+        "🟢 Above target"
+        if pd.notna(value) and value >= target
+        else "🔴 Below target"
+    )
+)
+
+def color_attendance(value):
+    if pd.isna(value):
+        return ""
+    if value >= target:
+        return "background-color: #d4edda; color: #155724; font-weight: bold"
+    return "background-color: #f8d7da; color: #721c24; font-weight: bold"
+
+
+styled_df = display_df.style.map(
+    color_attendance,
+    subset=["Attendance %"]
+)
+
+st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+# ---------- AGGREGATE ----------
+subject_present = int(df["Present"].sum())
+subject_od = int(df["OD"].sum())
+subject_makeup = int(df["Makeup"].sum())
+subject_absent = int(df["Absent"].sum())
+
+subject_attended = subject_present + subject_od + subject_makeup
+subject_total = subject_present + subject_absent
+
+aggregate_present = subject_attended + event_present
+aggregate_absent = subject_absent + event_absent
+aggregate_total = subject_total + event_present + event_absent
+
+current_pct = percentage(aggregate_present, aggregate_total)
+
+st.subheader("4️⃣ Overall attendance")
+
 c1, c2, c3 = st.columns(3)
-c1.metric("Current attendance", f"{current_pct:.2f}%")
-c2.metric("Attended", current_present)
-c3.metric("Total classes", current_total)
+
+c1.metric("Aggregate attendance", f"{current_pct:.2f}%")
+c2.metric("Attended hours", aggregate_present)
+c3.metric("Total hours", aggregate_total)
 
 if current_pct >= target:
-    st.success(f"You currently meet your {target}% target.")
+    st.success(f"Your aggregate attendance meets the {target}% target.")
 else:
-    needed = classes_needed(current_present, current_total, target)
+    need = classes_needed(aggregate_present, aggregate_total, target)
     st.warning(
-        f"You need to attend {needed} consecutive classes without absence "
+        f"Attend {need} consecutive classes without absence "
         f"to reach {target}%."
     )
 
-# ---------- INTERACTIVE CLASS LEAVE ----------
+
+# ---------- CLASS LEAVE SIMULATOR ----------
 st.divider()
-st.subheader("3️⃣ Class leave → Present attendance")
+st.subheader("5️⃣ Class leave → attendance")
 
 leave_count = st.number_input(
     "How many upcoming classes will you miss?",
@@ -159,8 +220,8 @@ leave_count = st.number_input(
     key="leave_count"
 )
 
-leave_total = current_total + leave_count
-leave_pct = percentage(current_present, leave_total)
+leave_total = aggregate_total + leave_count
+leave_pct = percentage(aggregate_present, leave_total)
 
 a, b, c = st.columns(3)
 a.metric(
@@ -168,17 +229,18 @@ a.metric(
     f"{leave_pct:.2f}%",
     delta=f"{leave_pct - current_pct:+.2f}%"
 )
-b.metric("Attended classes", current_present)
-c.metric("Total classes", leave_total)
+b.metric("Attended hours", aggregate_present)
+c.metric("Total hours", leave_total)
 
 if leave_pct >= target:
-    st.success(f"You remain at or above {target}% after missing {leave_count} classes.")
+    st.success(f"You remain at or above {target}% after this leave.")
 else:
-    st.error(f"You fall below {target}% after missing {leave_count} classes.")
+    st.error(f"You will fall below your {target}% target.")
 
-# ---------- INTERACTIVE CLASS TAKE ----------
+
+# ---------- CLASS TAKE SIMULATOR ----------
 st.divider()
-st.subheader("4️⃣ Class take → Present attendance")
+st.subheader("6️⃣ Class take → attendance")
 
 take_count = st.number_input(
     "How many upcoming classes will you attend?",
@@ -189,8 +251,8 @@ take_count = st.number_input(
     key="take_count"
 )
 
-take_present = current_present + take_count
-take_total = current_total + take_count
+take_present = aggregate_present + take_count
+take_total = aggregate_total + take_count
 take_pct = percentage(take_present, take_total)
 
 a, b, c = st.columns(3)
@@ -199,26 +261,22 @@ a.metric(
     f"{take_pct:.2f}%",
     delta=f"{take_pct - current_pct:+.2f}%"
 )
-b.metric("Attended classes", take_present)
-c.metric("Total classes", take_total)
+b.metric("Attended hours", take_present)
+c.metric("Total hours", take_total)
 
 if take_pct >= target:
-    st.success(f"You meet your {target}% target after attending {take_count} classes.")
+    st.success(f"You meet your {target}% target after attending these classes.")
 else:
-    need = classes_needed(take_present, take_total, target)
-    st.warning(f"You need {need} more consecutive attended classes to reach {target}%.")
+    needed = classes_needed(take_present, take_total, target)
+    st.warning(f"Attend {needed} more consecutive classes to reach {target}%.")
 
-# ---------- HOW MANY CLASSES CAN I LEAVE ----------
+
+# ---------- SAFE LEAVE CALCULATOR ----------
 st.divider()
-st.subheader("5️⃣ How many classes can I leave?")
-
-st.caption(
-    "This calculator assumes you attend the planned classes first, "
-    "then considers how many more classes you could miss."
-)
+st.subheader("7️⃣ How many classes can I leave?")
 
 planned_take = st.number_input(
-    "Classes you will attend before taking leave",
+    "Classes you plan to attend before taking leave",
     min_value=0,
     max_value=10000,
     value=20,
@@ -226,11 +284,13 @@ planned_take = st.number_input(
     key="planned_take"
 )
 
-planned_present = current_present + planned_take
-planned_total = current_total + planned_take
+planned_present = aggregate_present + planned_take
+planned_total = aggregate_total + planned_take
 planned_pct = percentage(planned_present, planned_total)
 
-safe_leave = classes_can_leave(planned_present, planned_total, target)
+safe_leave = classes_can_leave(
+    planned_present, planned_total, target
+)
 
 a, b = st.columns(2)
 a.metric("Attendance after planned classes", f"{planned_pct:.2f}%")
@@ -243,20 +303,14 @@ else:
 if planned_pct < target:
     needed = classes_needed(planned_present, planned_total, target)
     st.warning(
-        f"You are below target. Attend {needed} more classes without "
-        "absence before considering additional leave."
+        f"You are below target. Attend {needed} more classes "
+        "without absence before considering leave."
     )
 elif safe_leave == 0:
     st.warning("You cannot miss any more classes without falling below target.")
 else:
     st.success(
         f"After attending {planned_take} classes, you can miss up to "
-        f"{safe_leave} additional classes and remain at or above {target}%."
+        f"{safe_leave} additional classes and stay at or above {target}%."
     )
-
-# ---------- SUBJECT-WISE ERP DATA ----------
-if not df.empty:
-    st.divider()
-    st.subheader("📚 Subject-wise attendance")
-    st.dataframe(df, use_container_width=True, hide_index=True)
     
