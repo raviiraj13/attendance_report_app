@@ -1,354 +1,377 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from fpdf import FPDF
-import sympy as sp
 import math
 import re
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Attendance Tracker🥳", layout="wide")
-
+st.set_page_config(page_title="Attendance Tracker 🥳", layout="wide")
 st.title("📊 Attendance Tracker")
+st.caption("Paste the Attendance Report from your college ERP.")
 
-st.caption("Paste the Attendance from college ERP")
-
-# ---------------- COLORS ----------------
 PRESENT_COLOR = "#1ABC9C"
 ABSENT_COLOR = "#F39C12"
 
+
 # ---------------- CLEAN PDF ----------------
 def clean_text(text):
-    return text.encode("latin-1", "ignore").decode("latin-1")
+    return str(text).encode("latin-1", "replace").decode("latin-1")
+
 
 # ---------------- PARSER ----------------
 def parse_attendance(text):
-
     rows = []
 
     for line in text.splitlines():
-
         parts = re.split(r"\t+", line.strip())
 
-        if len(parts) < 9:
+        if len(parts) < 9 or not parts[0].strip().isdigit():
             continue
 
-        if not parts[0].isdigit():
+        try:
+            subject = parts[2].strip()
+            present = int(parts[4].strip())
+            od = int(parts[5].strip())
+            makeup = int(parts[6].strip())
+            absent = int(parts[7].strip())
+        except (ValueError, IndexError):
             continue
-
-        subject = parts[2]
-        present = int(parts[4])
-        od = int(parts[5])
-        makeup = int(parts[6])
-        absent = int(parts[7])
 
         rows.append([
-            subject,
-            present,
-            od,
-            makeup,
-            absent
+            subject, present, od, makeup, absent
         ])
 
-    df = pd.DataFrame(rows, columns=[
-        "Subject",
-        "Present",
-        "OD",
-        "Makeup",
-        "Absent"
-    ])
+    columns = ["Subject", "Present", "OD", "Makeup", "Absent"]
+    df = pd.DataFrame(rows, columns=columns)
+
+    if df.empty:
+        return df
 
     df["Effective Present"] = (
-        df["Present"] +
-        df["OD"] +
-        df["Makeup"]
+        df["Present"] + df["OD"] + df["Makeup"]
     )
 
-    df["Total Classes"] = (
-        df["Present"] +
-        df["Absent"]
-    )
+    # Subject percentages use the subject's present + absent count.
+    df["Total Classes"] = df["Present"] + df["Absent"]
 
     df["Attendance%"] = (
-        df["Effective Present"] /
-        df["Total Classes"] * 100
+        df["Effective Present"]
+        / df["Total Classes"].replace(0, float("nan"))
+        * 100
     ).round(2)
 
     df["Status"] = df["Attendance%"].apply(
-        lambda x: "🟢" if x >= 75 else "🔴"
+        lambda x: "🟢" if pd.notna(x) and x >= 75 else "🔴"
     )
 
     return df.sort_values("Attendance%")
 
-# ---------------- PIE CHART ----------------
-def plot_attendance_percentage_pie(aggregate_present, total_present, total_absent):
 
-    total_classes = total_present + total_absent
+# ---------------- ATTENDANCE CALCULATIONS ----------------
+def attendance_percentage(present, total):
+    if total <= 0:
+        return 0.0
+    return present / total * 100
 
-    attendance_percent = (
-        aggregate_present / total_classes * 100
+
+def classes_needed(present, total, target):
+    """Minimum future classes/hours attended consecutively."""
+    if target <= 0 or attendance_percentage(present, total) >= target:
+        return 0
+
+    if target >= 100:
+        return 0 if present >= total else math.inf
+
+    # (present + x) / (total + x) >= target / 100
+    return max(
+        0,
+        math.ceil(
+            (target * total - 100 * present) / (100 - target)
+            - 1e-10
+        )
     )
 
-    remaining_percent = 100 - attendance_percent
 
-    plt.figure(figsize=(6,6))
+def classes_can_leave(present, total, target):
+    """Maximum additional absences before falling below target."""
+    if target <= 0:
+        return math.inf
 
-    plt.pie(
-        [attendance_percent, remaining_percent],
+    if attendance_percentage(present, total) < target:
+        return 0
+
+    # present / (total + x) >= target / 100
+    return max(0, math.floor(
+        (100 * present / target) - total + 1e-10
+    ))
+
+
+# ---------------- PIE CHART ----------------
+def plot_attendance_percentage_pie(present, total):
+    if total <= 0:
+        st.info("No attendance data available for the chart.")
+        return
+
+    attendance = min(100, max(0, attendance_percentage(present, total)))
+    remaining = 100 - attendance
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.pie(
+        [attendance, remaining],
         labels=[
-            f"Attendance {attendance_percent:.2f}%",
-            f"Remaining {remaining_percent:.2f}%"
+            f"Attended {attendance:.2f}%",
+            f"Not attended {remaining:.2f}%"
         ],
         autopct="%1.1f%%",
         colors=[PRESENT_COLOR, ABSENT_COLOR],
         startangle=90
     )
+    ax.set_title("Aggregate Attendance")
+    st.pyplot(fig)
+    plt.close(fig)
 
-    plt.title("Aggregate Attendance Percentage")
-
-    st.pyplot(plt)
-
-    plt.close()
-
-# ---------------- MATH ----------------
-def classes_needed(present, total, target):
-
-    x = sp.symbols("x")
-
-    sol = sp.solve(
-        (present+x)/(total+x)-target/100,
-        x
-    )
-
-    if sol:
-        return max(0, math.ceil(sol[0]))
-
-    return 0
-
-
-def classes_can_leave(present, total, target):
-
-    leave = 0
-
-    while present/(total+leave)*100 >= target:
-        leave += 1
-
-    return max(0, leave-1)
 
 # ---------------- PDF ----------------
-def generate_pdf(attendance, df):
-
+def generate_pdf(aggregate, df, event_present, event_absent, total, attended):
     pdf = FPDF()
-
     pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Attendance Report", ln=True)
 
-    pdf.set_font("Arial","B",16)
-
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(0, 8, f"Aggregate Attendance: {aggregate:.2f}%", ln=True)
+    pdf.cell(0, 8, f"Total attended hours: {attended}", ln=True)
+    pdf.cell(0, 8, f"Total counted hours: {total}", ln=True)
     pdf.cell(
-        0,10,
-        "Attendance Report",
+        0, 8,
+        f"Event hours: {event_present} present, {event_absent} absent",
         ln=True
     )
 
-    pdf.set_font("Arial","",12)
+    pdf.ln(4)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 8, "Subject-wise Attendance", ln=True)
+    pdf.set_font("Arial", "", 10)
 
-    pdf.cell(
-        0,10,
-        f"Aggregate Attendance: {attendance:.2f}%",
-        ln=True
-    )
-
-    pdf.ln(5)
-
-    for _,r in df.iterrows():
-
-        pdf.cell(
-            0,8,
-            clean_text(
-                f"{r['Subject']} : {r['Attendance%']}%"
-            ),
-            ln=True
+    for _, row in df.iterrows():
+        value = row["Attendance%"]
+        value_text = f"{value:.2f}%" if pd.notna(value) else "N/A"
+        pdf.multi_cell(
+            0, 7,
+            clean_text(f"{row['Subject']}: {value_text}")
         )
 
     return pdf.output(dest="S").encode("latin-1")
 
+
 # ---------------- INPUT ----------------
 text = st.text_area(
     "Paste Attendance Report",
-    height=300
+    height=300,
+    placeholder="Paste the tab-separated subject attendance table here..."
 )
 
-if text:
+st.subheader("📅 Additional Event Attendance")
+st.caption(
+    "Enter event hours separately. These affect aggregate attendance "
+    "but not individual subject percentages."
+)
 
+event_col1, event_col2 = st.columns(2)
+
+with event_col1:
+    event_present = st.number_input(
+        "Event hours attended",
+        min_value=0,
+        value=12,
+        step=1
+    )
+
+with event_col2:
+    event_absent = st.number_input(
+        "Event hours absent",
+        min_value=0,
+        value=12,
+        step=1
+    )
+
+target = st.number_input(
+    "Target aggregate attendance (%)",
+    min_value=1,
+    max_value=100,
+    value=75,
+    step=1
+)
+
+if text.strip():
     df = parse_attendance(text)
 
-    st.success("Attendance uploaded successfully🥳")
+    if df.empty:
+        st.error(
+            "No subject rows detected. Paste the complete ERP table "
+            "with tab-separated columns."
+        )
+        st.stop()
 
-    st.subheader("Subject-wise Attendance")
+    st.success("Attendance report parsed successfully!")
 
-    st.dataframe(df)
-
-    # ---------------- SUMMARY ----------------
-    total_present = df["Present"].sum()
-    total_od = df["OD"].sum()
-    total_makeup = df["Makeup"].sum()
-    total_absent = df["Absent"].sum()
-
-    aggregate_present = (
-        total_present +
-        total_od +
-        total_makeup
+    # ---------------- SUBJECT-WISE ----------------
+    st.subheader("📚 Subject-wise Attendance")
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True
     )
 
-    total_classes = (
-        total_present +
-        total_absent
+    # ---------------- AGGREGATE ----------------
+    subject_present = int(df["Present"].sum())
+    total_od = int(df["OD"].sum())
+    total_makeup = int(df["Makeup"].sum())
+    subject_absent = int(df["Absent"].sum())
+
+    subject_attended = subject_present + total_od + total_makeup
+    subject_total = subject_present + subject_absent
+
+    aggregate_present = subject_attended + event_present
+    total_classes = subject_total + event_present + event_absent
+
+    aggregate_attendance = attendance_percentage(
+        aggregate_present, total_classes
     )
 
-    aggregate_attendance = (
-        aggregate_present /
-        total_classes * 100
-    )
+    st.subheader("📈 Overall Summary")
 
-    st.subheader("Overall Summary")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Subject Present", subject_present)
+    c2.metric("Subject Absent", subject_absent)
+    c3.metric("Subject Total", subject_total)
 
-    c1,c2,c3 = st.columns(3)
-    c4,c5,c6 = st.columns(3)
-
-    c1.metric("Present", total_present)
-    c2.metric("Absent", total_absent)
-    c3.metric("Total Classes", total_classes)
-
+    c4, c5, c6 = st.columns(3)
     c4.metric("OD", total_od)
     c5.metric("Makeup", total_makeup)
-    c6.metric("Aggregate Present", aggregate_present)
+    c6.metric("Event Hours", event_present + event_absent)
 
     st.metric(
-        "Aggregate Attendance %",
+        "Subject-only Attendance",
+        f"{attendance_percentage(subject_attended, subject_total):.2f}%"
+    )
+
+    st.metric(
+        "Aggregate Attendance (including events)",
         f"{aggregate_attendance:.2f}%"
     )
 
-    # ---------------- PIE CHART ----------------
+    st.caption(
+        f"Aggregate calculation: {aggregate_present} attended hours "
+        f"÷ {total_classes} total hours."
+    )
+
     plot_attendance_percentage_pie(
-        aggregate_present,
-        total_present,
-        total_absent
+        aggregate_present, total_classes
     )
 
     # ---------------- TARGET OPTIMIZER ----------------
     st.subheader("🎯 Aggregate Target Optimizer")
 
-    target = st.number_input(
-        "Enter Target %",
-        min_value=0,
-        max_value=100,
-        value=75,
-        step=1
-    )
-
     need = classes_needed(
-        aggregate_present,
-        total_classes,
-        target
-    )
-
-    leave_safe = classes_can_leave(
-        aggregate_present,
-        total_classes,
-        target
+        aggregate_present, total_classes, target
     )
 
     if aggregate_attendance < target:
-
-        st.warning(
-            f"🥴Attend {need} classes to reach {target}% attendance"
-        )
-
+        if math.isinf(need):
+            st.warning("The target cannot be reached under these assumptions.")
+        else:
+            st.warning(
+                f"Attend the next **{need} consecutive hours/classes** "
+                f"with no absences to reach {target}%."
+            )
     else:
-
-        st.success(
-            f"🥳You can leave {leave_safe} classes safely"
+        leave_safe = classes_can_leave(
+            aggregate_present, total_classes, target
         )
+        if math.isinf(leave_safe):
+            st.success("At a 0% target, any number of absences meets the target.")
+        else:
+            st.success(
+                f"You can miss up to **{leave_safe} additional hours** "
+                f"before falling below {target}%."
+            )
 
     # ---------------- LEAVE SIMULATOR ----------------
     st.subheader("🎚️ Leave Simulator + Recovery")
 
     leave_x = st.number_input(
-        "Enter number of classes to leave",
+        "How many future hours do you expect to miss?",
         min_value=0,
-        max_value=total_classes + 500,
+        max_value=10000,
         value=0,
         step=1
     )
 
-    new_total = total_classes + leave_x
-
-    new_attendance = (
-        aggregate_present /
-        new_total * 100
+    simulated_total = total_classes + leave_x
+    simulated_attendance = attendance_percentage(
+        aggregate_present, simulated_total
     )
 
     st.metric(
-        "Attendance after leaving",
-        f"{new_attendance:.2f}%"
+        "Attendance after these absences",
+        f"{simulated_attendance:.2f}%"
     )
 
-    required_after_leave = classes_needed(
-        aggregate_present,
-        new_total,
-        target
+    recovery = classes_needed(
+        aggregate_present, simulated_total, target
     )
 
     st.metric(
-        "Classes required to recover target",
-        required_after_leave
+        "Consecutive hours to recover target",
+        "Not possible" if math.isinf(recovery) else str(recovery)
     )
 
     # ---------------- SUBJECT TARGET ----------------
     st.subheader("🎯 Subject-wise Target Optimizer")
 
-    subject = st.selectbox(
-        "Select Subject",
-        df["Subject"]
-    )
-
+    subject = st.selectbox("Select Subject", df["Subject"])
     row = df[df["Subject"] == subject].iloc[0]
 
-    sub_need = classes_needed(
-        row["Effective Present"],
-        row["Total Classes"],
-        target
-    )
+    sub_present = int(row["Effective Present"])
+    sub_total = int(row["Total Classes"])
+    sub_attendance = attendance_percentage(sub_present, sub_total)
 
-    sub_leave = classes_can_leave(
-        row["Effective Present"],
-        row["Total Classes"],
-        target
-    )
+    sub_need = classes_needed(sub_present, sub_total, target)
 
-    if row["Attendance%"] < target:
-
-        st.warning(
-            f"{subject}: Attend {sub_need} classes"
-        )
-
+    if sub_attendance < target:
+        if math.isinf(sub_need):
+            st.warning(f"{subject}: target cannot be reached under these assumptions.")
+        else:
+            st.warning(
+                f"{subject}: attend **{sub_need} consecutive classes** "
+                f"to reach {target}%."
+            )
     else:
-
+        sub_leave = classes_can_leave(sub_present, sub_total, target)
         st.success(
-            f"{subject}: Can leave {sub_leave} classes"
+            f"{subject}: you can miss up to **{sub_leave} classes** "
+            f"before falling below {target}%."
         )
 
-    # ---------------- PDF ----------------
+    # ---------------- PDF DOWNLOAD ----------------
     pdf = generate_pdf(
         aggregate_attendance,
-        df
+        df,
+        event_present,
+        event_absent,
+        total_classes,
+        aggregate_present
     )
 
     st.download_button(
-        "Download PDF",
-        pdf,
-        "attendance_report.pdf"
+        "📄 Download Attendance PDF",
+        data=pdf,
+        file_name="attendance_report.pdf",
+        mime="application/pdf"
     )
-
-
-
+else:
+    st.info("Paste your ERP attendance table to calculate your attendance.")
+    
